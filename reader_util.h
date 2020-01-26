@@ -1,3 +1,5 @@
+#include <pcap.h>
+#define MAX_NUM_READER_THREADS     16
 #include "ndpi_includes.h"
 
 // workflow main structure
