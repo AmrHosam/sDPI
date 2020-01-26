@@ -2,6 +2,8 @@
 #define MAX_NUM_READER_THREADS     16
 #include "ndpi_includes.h"
 
+#include "notsure.h"
+
 // workflow main structure
 typedef struct ndpi_workflow {
   u_int64_t last_time;
