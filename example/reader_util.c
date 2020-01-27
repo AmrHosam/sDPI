@@ -1,4 +1,6 @@
 #include "reader_util.h"
+#include "ndpi_main.h"
+static u_int32_t flow_id = 0;
 int ndpi_workflow_node_cmp(const void *a, const void *b) {
   const struct ndpi_flow_info *fa = (const struct ndpi_flow_info*)a;
   const struct ndpi_flow_info *fb = (const struct ndpi_flow_info*)b;
@@ -34,6 +36,24 @@ int ndpi_workflow_node_cmp(const void *a, const void *b) {
 
   return(0); /* notreached */
 }
+/* ***************************************************** */
+
+extern u_int32_t current_ndpi_memory, max_ndpi_memory;
+
+/**
+ * @brief malloc wrapper function
+ */
+static void *malloc_wrapper(size_t size) {
+  current_ndpi_memory += size;
+
+  if(current_ndpi_memory > max_ndpi_memory)
+    max_ndpi_memory = current_ndpi_memory;
+
+  return malloc(size);
+}
+
+/* ***************************************************** */
+
 static struct ndpi_flow_info *get_ndpi_flow_info(struct ndpi_workflow * workflow,
 						 const u_int8_t version,
 						 u_int16_t vlan_id,
@@ -206,6 +226,7 @@ static struct ndpi_flow_info *get_ndpi_flow_info(struct ndpi_workflow * workflow
 	            NDPI_LOG(0, workflow->ndpi_struct, NDPI_LOG_ERROR, "[NDPI] %s(1): not enough memory\n", __FUNCTION__);
 	            return(NULL);
             }
+            //Fill flow info
             workflow->num_allocated_flows++;
             memset(newflow, 0, sizeof(struct ndpi_flow_info));
             newflow->flow_id = flow_id++;
@@ -217,11 +238,155 @@ static struct ndpi_flow_info *get_ndpi_flow_info(struct ndpi_workflow * workflow
             newflow->ip_version = version;
             #ifdef DATA_ANALYSIS
             newflow->iat_c_to_s = ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW),
-	        newflow->iat_s_to_c =  ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW);
+	          newflow->iat_s_to_c =  ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW);
             newflow->pktlen_c_to_s = ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW),
-	        newflow->pktlen_s_to_c =  ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW),
-	        newflow->iat_flow = ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW);;
+	          newflow->pktlen_s_to_c =  ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW),
+	          newflow->iat_flow = ndpi_alloc_data_analysis(DATA_ANALUYSIS_SLIDING_WINDOW);;
             #endif
+            //Converts from binary form to text form (decimal)
+            if(version == IPVERSION) 
+            {
+	            inet_ntop(AF_INET, &newflow->src_ip, newflow->src_name, sizeof(newflow->src_name));
+	            inet_ntop(AF_INET, &newflow->dst_ip, newflow->dst_name, sizeof(newflow->dst_name));
+            }
+            else 
+            {
+	            inet_ntop(AF_INET6, &iph6->ip6_src, newflow->src_name, sizeof(newflow->src_name));
+	            inet_ntop(AF_INET6, &iph6->ip6_dst, newflow->dst_name, sizeof(newflow->dst_name));
+	            /* For consistency across platforms replace :0: with :: */
+	            ndpi_patchIPv6Address(newflow->src_name), ndpi_patchIPv6Address(newflow->dst_name);
+            }
+            if((newflow->ndpi_flow = ndpi_flow_malloc(SIZEOF_FLOW_STRUCT)) == NULL) 
+            {
+	            NDPI_LOG(0, workflow->ndpi_struct, NDPI_LOG_ERROR, "[NDPI] %s(2): not enough memory\n", __FUNCTION__);
+	            free(newflow);
+	            return(NULL);
+            }
+            else
+            {
+	            memset(newflow->ndpi_flow, 0, SIZEOF_FLOW_STRUCT);
+            }
+            if((newflow->src_id = ndpi_malloc(SIZEOF_ID_STRUCT)) == NULL) 
+            {
+	            NDPI_LOG(0, workflow->ndpi_struct, NDPI_LOG_ERROR, "[NDPI] %s(3): not enough memory\n", __FUNCTION__);
+	            free(newflow);
+	            return(NULL);
+            }
+            else
+	          {
+              memset(newflow->src_id, 0, SIZEOF_ID_STRUCT);
+            }
+            if((newflow->dst_id = ndpi_malloc(SIZEOF_ID_STRUCT)) == NULL) 
+            {
+	            NDPI_LOG(0, workflow->ndpi_struct, NDPI_LOG_ERROR, "[NDPI] %s(4): not enough memory\n", __FUNCTION__);
+	            free(newflow);
+	            return(NULL);
+            }
+            else
+	          {
+              memset(newflow->dst_id, 0, SIZEOF_ID_STRUCT);
+            }
+            ndpi_tsearch(newflow, &workflow->ndpi_flows_root[idx], ndpi_workflow_node_cmp); /* Add */
+            workflow->stats.ndpi_flow_count++;
+            *src = newflow->src_id, *dst = newflow->dst_id;
+            //Keep data length for current packet
+            newflow->entropy.src2dst_pkt_len[newflow->entropy.src2dst_pkt_count] = l4_data_len;
+            //keep time for current packet
+            newflow->entropy.src2dst_pkt_time[newflow->entropy.src2dst_pkt_count] = when;
+            //Set the first packet arrival time in this flow
+            if (newflow->entropy.src2dst_pkt_count == 0) 
+            {
+              newflow->entropy.src2dst_start = when;
+            }
+            //Set number of packets so far from src to dst
+            newflow->entropy.src2dst_pkt_count++;
+            // Non zero app data.
+            if (l4_data_len != 0XFEEDFACE && l4_data_len != 0) 
+            {
+              newflow->entropy.src2dst_opackets++;
+              newflow->entropy.src2dst_l4_bytes += l4_data_len;
+            }
+            return newflow;
         }
+
     }
+    else
+    {
+      //In case of found flow already
+      struct ndpi_flow_info *rflow = *(struct ndpi_flow_info**)ret;
+      if(is_changed) 
+      {
+        if(rflow->src_ip == iph->saddr
+	        && rflow->dst_ip == iph->daddr
+	        && rflow->src_port == htons(*sport)
+	        && rflow->dst_port == htons(*dport)
+	        )
+	      {
+          //If flow is reversed with respect to packet
+          *src = rflow->dst_id, *dst = rflow->src_id, *src_to_dst_direction = 0, rflow->bidirectional = 1;
+        }
+        else
+	      {
+          //If flow is in the same direction as packet
+            *src = rflow->src_id, *dst = rflow->dst_id, *src_to_dst_direction = 1;
+        } 
+      }
+      else 
+      {
+        if(rflow->src_ip == iph->saddr
+	      && rflow->dst_ip == iph->daddr
+	      && rflow->src_port == htons(*sport)
+	      && rflow->dst_port == htons(*dport)
+	      )
+        {
+          //Flow in the same direction as packet
+	        *src = rflow->src_id, *dst = rflow->dst_id, *src_to_dst_direction = 1;
+        }
+        else
+	      {
+          //Flow in reversed direction with respect to packet
+        *src = rflow->dst_id, *dst = rflow->src_id, *src_to_dst_direction = 0, rflow->bidirectional = 1;
+        }
+      }
+      //If packet is in the same direction as flow
+      if (src_to_dst_direction) 
+      {
+        if (rflow->entropy.src2dst_pkt_count < max_num_packets_per_flow) 
+        {
+          rflow->entropy.src2dst_pkt_len[rflow->entropy.src2dst_pkt_count] = l4_data_len;
+          rflow->entropy.src2dst_pkt_time[rflow->entropy.src2dst_pkt_count] = when;
+          rflow->entropy.src2dst_l4_bytes += l4_data_len;
+          rflow->entropy.src2dst_pkt_count++;
+        }
+      // Non zero app data.
+        if (l4_data_len != 0XFEEDFACE && l4_data_len != 0) 
+        {
+          rflow->entropy.src2dst_opackets++;
+        }
+      } 
+      else 
+      {
+        //If packet was in the opposite direction with respect to flow
+        if (rflow->entropy.dst2src_pkt_count < max_num_packets_per_flow) 
+        {
+          rflow->entropy.dst2src_pkt_len[rflow->entropy.dst2src_pkt_count] = l4_data_len;
+          rflow->entropy.dst2src_pkt_time[rflow->entropy.dst2src_pkt_count] = when;
+          if (rflow->entropy.dst2src_pkt_count == 0) 
+          {
+            rflow->entropy.dst2src_start = when;
+          }
+          rflow->entropy.dst2src_l4_bytes += l4_data_len;
+          rflow->entropy.dst2src_pkt_count++;
+        }
+      // Non zero app data.
+        if (l4_data_len != 0XFEEDFACE && l4_data_len != 0) 
+        {
+          rflow->entropy.dst2src_opackets++;
+        }
+      } 
+      return(rflow); 
+    }
+
+    
+
 }
