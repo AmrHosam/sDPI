@@ -36,6 +36,24 @@ int ndpi_workflow_node_cmp(const void *a, const void *b) {
 
   return(0); /* notreached */
 }
+/* ***************************************************** */
+
+extern u_int32_t current_ndpi_memory, max_ndpi_memory;
+
+/**
+ * @brief malloc wrapper function
+ */
+static void *malloc_wrapper(size_t size) {
+  current_ndpi_memory += size;
+
+  if(current_ndpi_memory > max_ndpi_memory)
+    max_ndpi_memory = current_ndpi_memory;
+
+  return malloc(size);
+}
+
+/* ***************************************************** */
+
 static struct ndpi_flow_info *get_ndpi_flow_info(struct ndpi_workflow * workflow,
 						 const u_int8_t version,
 						 u_int16_t vlan_id,
