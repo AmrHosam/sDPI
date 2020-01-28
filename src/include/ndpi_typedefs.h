@@ -242,7 +242,7 @@ struct ndpi_mpls_header
 #elif defined(__BIG_ENDIAN__)
   u_int32_t label:20, exp:3, s:1, ttl:8;
 #else
-# error "Byte order must be defined"
+#error "Byte order must be defined"
 #endif
 } PACK_OFF;
 
