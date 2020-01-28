@@ -700,4 +700,39 @@ static struct ndpi_proto packet_processing(struct ndpi_workflow * workflow,
     workflow->stats.total_discarded_bytes++; //PACKETS NOT BYTES
     return(nproto);
   }
+  if(!flow->detection_completed) 
+  {
+    u_int enough_packets =
+      (((proto == IPPROTO_UDP) && ((flow->src2dst_packets + flow->dst2src_packets) > max_num_udp_dissected_pkts))
+       || ((proto == IPPROTO_TCP) && ((flow->src2dst_packets + flow->dst2src_packets) > max_num_tcp_dissected_pkts))) ? 1 : 0;
+    
+  
+    flow->detected_protocol = ndpi_detection_process_packet(workflow->ndpi_struct, ndpi_flow,
+							    iph ? (uint8_t *)iph : (uint8_t *)iph6,
+							    ipsize, time, src, dst);
+
+    if(enough_packets || (flow->detected_protocol.app_protocol != NDPI_PROTOCOL_UNKNOWN)) 
+    { 
+      // not enough packets and protocol is KNOWN we check for further dissection
+      if((!enough_packets) && ndpi_extra_dissection_possible(workflow->ndpi_struct, ndpi_flow)) 
+	      ; /* Wait for certificate fingerprint */
+      else //enough packets or no further dissection
+      {
+	        /* New protocol detected or give up */
+	        flow->detection_completed = 1;
+        //giveup if protocol is still unknown
+	      if(flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN)
+        {
+	        u_int8_t proto_guessed;
+          
+	        flow->detected_protocol = ndpi_detection_giveup(workflow->ndpi_struct, flow->ndpi_flow,
+	      						  enable_protocol_guess, &proto_guessed);
+	      }
+        
+	      process_ndpi_collected_info(workflow, flow);
+      }
+    }
+  }
+
+  return(flow->detected_protocol);
 }
