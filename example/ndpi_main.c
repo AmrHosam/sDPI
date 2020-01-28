@@ -155,6 +155,34 @@ struct ndpi_detection_module_struct {
 
 		  void hyperscan; /* Intel Hyperscan */
 	};
+/* ********************************************************************************* */
+
+ndpi_protocol ndpi_detection_process_packet(struct ndpi_detection_module_struct *ndpi_str,
+					    struct ndpi_flow_struct *flow,
+					    const unsigned char *packet,
+					    const unsigned short packetlen,
+					    const u_int64_t current_tick_l,
+					    struct ndpi_id_struct *src,
+					    struct ndpi_id_struct *dst) {
+  NDPI_SELECTION_BITMASK_PROTOCOL_SIZE ndpi_selection_packet;
+  u_int32_t a;
+  ndpi_protocol ret = { NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED };
+
+  if(ndpi_str->ndpi_log_level >= NDPI_LOG_TRACE)
+    NDPI_LOG(flow ? flow->detected_protocol_stack[0]:NDPI_PROTOCOL_UNKNOWN,
+	     ndpi_str, NDPI_LOG_TRACE, "START packet processing\n");
+
+  if(flow == NULL)
+    return(ret);
+  else
+    ret.category = flow->category;
+
+  flow->num_processed_pkts++;
+
+  /* Init default */
+  ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+						}
+/* ********************************************************************************* */
 int main(void) {
 	puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
 	return EXIT_SUCCESS;
