@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "reader_util.h": "c"
+        "reader_util.h": "c",
+        "__node_handle": "c"
     }
 }
