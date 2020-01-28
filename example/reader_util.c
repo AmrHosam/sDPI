@@ -718,18 +718,17 @@ static struct ndpi_proto packet_processing(struct ndpi_workflow * workflow,
 	      ; /* Wait for certificate fingerprint */
       else //enough packets or no further dissection
       {
-	        /* New protocol detected or give up */
-	        flow->detection_completed = 1;
-        //giveup if protocol is still unknown
-	      if(flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN)
-        {
-	        u_int8_t proto_guessed;
-          
-	        flow->detected_protocol = ndpi_detection_giveup(workflow->ndpi_struct, flow->ndpi_flow,
-	      						  enable_protocol_guess, &proto_guessed);
-	      }
+	      /* New protocol detected or give up */
+	      flow->detection_completed = 1;
+	    if(flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN)
+      {
+	      u_int8_t proto_guessed;
         
-	      process_ndpi_collected_info(workflow, flow);
+	      flow->detected_protocol = ndpi_detection_giveup(workflow->ndpi_struct, flow->ndpi_flow,
+	    						  enable_protocol_guess, &proto_guessed);
+	    }
+      
+	    process_ndpi_collected_info(workflow, flow);
       }
     }
   }
