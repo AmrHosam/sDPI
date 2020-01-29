@@ -1250,6 +1250,79 @@ ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_st
 
 /* ********************************************************************************* */
 
+void ndpi_set_log_level(struct ndpi_detection_module_struct *ndpi_str, u_int l) {
+  ndpi_str->ndpi_log_level = l;
+}
+int ndpi_load_categories_file(struct ndpi_detection_module_struct *ndpi_str, const char* path) {
+  char buffer[512], *line, *name, *category, *saveptr;
+  FILE *fd;
+  int len;
+
+  fd = fopen(path, "r");
+
+  if(fd == NULL) {
+    NDPI_LOG_ERR(ndpi_str, "Unable to open file %s [%s]\n", path, strerror(errno));
+    return(-1);
+  }
+
+  while(fd) {
+    line = fgets(buffer, sizeof(buffer), fd);
+
+    if(line == NULL)
+      break;
+
+    len = strlen(line);
+
+    if((len <= 1) || (line[0] == '#'))
+      continue;
+
+    line[len-1] = '\0';
+    name = strtok_r(line, "\t", &saveptr);
+
+    if(name) {
+      category = strtok_r(NULL, "\t", &saveptr);
+
+      if(category)
+        ndpi_load_category(ndpi_str, name, (ndpi_protocol_category_t) atoi(category));
+    }
+  }
+
+  fclose(fd);
+  ndpi_enable_loaded_categories(ndpi_str);
+
+  return(0);
+}
+void ndpi_finalize_initalization(struct ndpi_detection_module_struct *ndpi_str) {
+  u_int i;
+
+  for(i=0; i<4; i++) {
+    ndpi_automa *automa;
+
+    switch(i) {
+    case 0:
+      automa = &ndpi_str->host_automa;
+      break;
+
+    case 1:
+      automa = &ndpi_str->content_automa;
+      break;
+
+    case 2:
+      automa = &ndpi_str->bigrams_automa;
+      break;
+
+    case 3:
+      automa = &ndpi_str->impossible_bigrams_automa;
+      break;
+    }
+
+    ac_automata_finalize((AC_AUTOMATA_t*)automa->ac_automa);
+    automa->ac_automa_finalized = 1;
+  }
+}
+
+
+
 int main(void)
 {
 	puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
