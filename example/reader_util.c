@@ -731,6 +731,7 @@ static struct ndpi_proto packet_processing(struct ndpi_workflow * workflow,
 	      ; /* Wait for certificate fingerprint */
       else //enough packets or no further dissection
       {
+<<<<<<< HEAD
 	        /* New protocol detected or give up */
 	        flow->detection_completed = 1;
         //giveup if protocol is still unknown
@@ -1165,13 +1166,30 @@ ether_type_check:
 	  tunnel_type = ndpi_capwap_tunnel;
 	  goto iph_check;
 	}
+=======
+	      /* New protocol detected or give up */
+	      flow->detection_completed = 1;
+	    if(flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN)
+      {
+	      u_int8_t proto_guessed;
+        
+	      flow->detected_protocol = ndpi_detection_giveup(workflow->ndpi_struct, flow->ndpi_flow,
+	    						  enable_protocol_guess, &proto_guessed);
+	    }
+      
+	    process_ndpi_collected_info(workflow, flow);
+>>>>>>> 5e14205668cae7a5365db07225ed54f19a8c443e
       }
     }
   }
 
+<<<<<<< HEAD
   /* process the packet */
   return(packet_processing(workflow, time, vlan_id, tunnel_type, iph, iph6,
 			   ip_offset, header->caplen - ip_offset,
 			   header->caplen, header, packet, header->ts));
 }
+=======
+  return(flow->detected_protocol);
+>>>>>>> 5e14205668cae7a5365db07225ed54f19a8c443e
 }

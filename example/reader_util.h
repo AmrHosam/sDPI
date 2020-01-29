@@ -3,7 +3,6 @@
 #define MAX_NUM_READER_THREADS     16
 #define TICK_RESOLUTION          1000
 #include "ndpi_includes.h"
-
 #include "notsure.h"
 // flow tracking
 typedef struct ndpi_flow_info {
