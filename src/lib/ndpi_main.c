@@ -1378,6 +1378,105 @@ void ndpi_finalize_initalization(struct ndpi_detection_module_struct *ndpi_str) 
 
 
 
+/*****************************/
+void ndpi_set_protocol_detection_bitmask2(struct ndpi_detection_module_struct *ndpi_str,
+					  const NDPI_PROTOCOL_BITMASK * dbm) {
+  NDPI_PROTOCOL_BITMASK detection_bitmask_local;
+  NDPI_PROTOCOL_BITMASK *detection_bitmask = &detection_bitmask_local;
+  u_int32_t a = 0;
+
+  NDPI_BITMASK_SET(detection_bitmask_local, *dbm);
+  NDPI_BITMASK_SET(ndpi_str->detection_bitmask, *dbm);
+  /* set this here to zero to be interrupt safe */
+    ndpi_str->callback_buffer_size = 0;
+
+    /* HTTP */
+    init_http_dissector(ndpi_str, &a, detection_bitmask);
+    /* TLS */
+      init_tls_dissector(ndpi_str, &a, detection_bitmask);
+
+      /* WHATSAPP */
+      init_whatsapp_dissector(ndpi_str, &a, detection_bitmask);
+
+      /* GIT */
+        init_git_dissector(ndpi_str, &a, detection_bitmask);
+        
+        /* DNS */
+         init_dns_dissector(ndpi_str, &a, detection_bitmask);
+         
+#ifdef CUSTOM_NDPI_PROTOCOLS
+#include "../../../nDPI-custom/custom_ndpi_main_init.c"
+#endif
+  
+  /* ----------------------------------------------------------------- */
+
+  ndpi_str->callback_buffer_size = a;
+
+  NDPI_LOG_DBG2(ndpi_str,
+		"callback_buffer_size is %u\n", ndpi_str->callback_buffer_size);
+
+  /* now build the specific buffer for tcp, udp and non_tcp_udp */
+  ndpi_str->callback_buffer_size_tcp_payload = 0;
+  ndpi_str->callback_buffer_size_tcp_no_payload = 0;
+  for(a = 0; a < ndpi_str->callback_buffer_size; a++) {
+    if((ndpi_str->callback_buffer[a].ndpi_selection_bitmask
+	& (NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP |
+	   NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP |
+	   NDPI_SELECTION_BITMASK_PROTOCOL_COMPLETE_TRAFFIC)) != 0) {
+      if(_ndpi_debug_callbacks) NDPI_LOG_DBG2(ndpi_str,
+					      "callback_buffer_tcp_payload, adding buffer %u as entry %u\n", a,
+					      ndpi_str->callback_buffer_size_tcp_payload);
+
+      memcpy(&ndpi_str->callback_buffer_tcp_payload[ndpi_str->callback_buffer_size_tcp_payload],
+	     &ndpi_str->callback_buffer[a], sizeof(struct ndpi_call_function_struct));
+      ndpi_str->callback_buffer_size_tcp_payload++;
+
+      if((ndpi_str->
+	  callback_buffer[a].ndpi_selection_bitmask & NDPI_SELECTION_BITMASK_PROTOCOL_HAS_PAYLOAD) == 0) {
+	if(_ndpi_debug_callbacks) NDPI_LOG_DBG2(ndpi_str,
+						"\tcallback_buffer_tcp_no_payload, additional adding buffer %u to no_payload process\n", a);
+
+	memcpy(&ndpi_str->callback_buffer_tcp_no_payload
+	       [ndpi_str->callback_buffer_size_tcp_no_payload], &ndpi_str->callback_buffer[a],
+	       sizeof(struct ndpi_call_function_struct));
+	ndpi_str->callback_buffer_size_tcp_no_payload++;
+      }
+    }
+  }
+
+  ndpi_str->callback_buffer_size_udp = 0;
+  for(a = 0; a < ndpi_str->callback_buffer_size; a++) {
+    if((ndpi_str->callback_buffer[a].ndpi_selection_bitmask & (NDPI_SELECTION_BITMASK_PROTOCOL_INT_UDP |
+								  NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP |
+								  NDPI_SELECTION_BITMASK_PROTOCOL_COMPLETE_TRAFFIC))
+       != 0) {
+      if(_ndpi_debug_callbacks) NDPI_LOG_DBG2(ndpi_str,
+					      "callback_buffer_size_udp: adding buffer : %u as entry %u\n", a, ndpi_str->callback_buffer_size_udp);
+
+      memcpy(&ndpi_str->callback_buffer_udp[ndpi_str->callback_buffer_size_udp],
+	     &ndpi_str->callback_buffer[a], sizeof(struct ndpi_call_function_struct));
+      ndpi_str->callback_buffer_size_udp++;
+    }
+  }
+
+  ndpi_str->callback_buffer_size_non_tcp_udp = 0;
+  for(a = 0; a < ndpi_str->callback_buffer_size; a++) {
+    if((ndpi_str->callback_buffer[a].ndpi_selection_bitmask & (NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP |
+								  NDPI_SELECTION_BITMASK_PROTOCOL_INT_UDP |
+								  NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP)) == 0
+       || (ndpi_str->
+	   callback_buffer[a].ndpi_selection_bitmask & NDPI_SELECTION_BITMASK_PROTOCOL_COMPLETE_TRAFFIC) != 0) {
+      if(_ndpi_debug_callbacks) NDPI_LOG_DBG2(ndpi_str,
+					      "callback_buffer_non_tcp_udp: adding buffer : %u as entry %u\n", a, ndpi_str->callback_buffer_size_non_tcp_udp);
+
+      memcpy(&ndpi_str->callback_buffer_non_tcp_udp[ndpi_str->callback_buffer_size_non_tcp_udp],
+	     &ndpi_str->callback_buffer[a], sizeof(struct ndpi_call_function_struct));
+      ndpi_str->callback_buffer_size_non_tcp_udp++;
+    }
+  }
+}
+
+
 int main(void)
 {
 	puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
