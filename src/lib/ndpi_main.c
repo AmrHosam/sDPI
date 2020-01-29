@@ -1,12 +1,23 @@
-#include <sys/types.h>
-#include "/home/omarnagah/eclipse-workspace-new/sDPI/src/include/ndpi_api.h"
-#include <stdio.h>
+#ifdef HAVE_CONFIG_H
+#include "ndpi_config.h"
+#endif
 #include <stdlib.h>
+#include <errno.h>
+#include <sys/types.h>
+#define NDPI_CURRENT_PROTO NDPI_PROTOCOL_UNKNOWN
+#include "../include/ndpi_api.h"
+#include <time.h>
+#include "ndpi_content_match.c.inc"
+#include "third_party/include/ndpi_patricia.h"
+#ifndef WIN32
+#include <unistd.h>
+#endif
 #define NDPI_MAX_SUPPORTED_PROTOCOLS NDPI_LAST_IMPLEMENTED_PROTOCOL
 #define CUSTOM_CATEGORY_LABEL_LEN 32
 #define NUM_CUSTOM_CATEGORIES 5
 #define NDPI_PROTOCOL_BITMASK ndpi_protocol_bitmask_struct_t
 #define NDPI_MAX_NUM_CUSTOM_PROTOCOLS (NDPI_NUM_BITS - NDPI_LAST_IMPLEMENTED_PROTOCOL)
+static int _ndpi_debug_callbacks = 0;
 typedef struct ndpi_default_ports_tree_node
 {
 	ndpi_proto_defaults_t *proto;
@@ -105,7 +116,7 @@ struct ndpi_detection_module_struct
 #else
 		ndpi_automa hostnames, hostnames_shadow;
 #endif
-		void ipAddresses, *ipAddresses_shadow; /* Patricia */
+		void *ipAddresses, *ipAddresses_shadow; /* Patricia */
 		u_int8_t categories_loaded;
 	} custom_categories;
 
@@ -160,7 +171,7 @@ struct ndpi_detection_module_struct
 		disable_metadata_export : 1		   /* No metadata is exported */
 		;
 
-	void hyperscan; /* Intel Hyperscan */
+	void *hyperscan; /* Intel Hyperscan */
 };
 
 struct ndpi_detection_module_struct *ndpi_init_detection_module(ndpi_init_prefs prefs)
@@ -838,35 +849,458 @@ u_int16_t ndpi_network_ptree_match(struct ndpi_detection_module_struct *ndpi_str
 
 	return (node ? node->value.user_value : NDPI_PROTOCOL_UNKNOWN);
 }
-/* ******************************************************************** */
-
-ndpi_protocol ndpi_detection_process_packet(struct ndpi_detection_module_struct *ndpi_str,
-											struct ndpi_flow_struct *flow,
-											const unsigned char *packet,
-											const unsigned short packetlen,
-											const u_int64_t current_tick_l,
-											struct ndpi_id_struct *src,
-											struct ndpi_id_struct *dst)
+/**********************************************************/
+void check_ndpi_other_flow_func(struct ndpi_detection_module_struct *ndpi_str,
+								struct ndpi_flow_struct *flow,
+								NDPI_SELECTION_BITMASK_PROTOCOL_SIZE *ndpi_selection_packet)
 {
-	NDPI_SELECTION_BITMASK_PROTOCOL_SIZE ndpi_selection_packet;
+
+	if (!flow)
+	{
+		return;
+	}
+
+	void *func = NULL;
 	u_int32_t a;
-	ndpi_protocol ret = {NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED};
+	u_int16_t proto_index = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoIdx;
+	int16_t proto_id = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoId;
+	NDPI_PROTOCOL_BITMASK detection_bitmask;
 
-	if (ndpi_str->ndpi_log_level >= NDPI_LOG_TRACE)
-		NDPI_LOG(flow ? flow->detected_protocol_stack[0] : NDPI_PROTOCOL_UNKNOWN,
-				 ndpi_str, NDPI_LOG_TRACE, "START packet processing\n");
+	NDPI_SAVE_AS_BITMASK(detection_bitmask, flow->packet.detected_protocol_stack[0]);
 
-	if (flow == NULL)
-		return (ret);
+	if ((proto_id != NDPI_PROTOCOL_UNKNOWN) && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer[proto_index].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer[proto_index].detection_bitmask, detection_bitmask) != 0 && (ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask)
+	{
+		if ((flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[flow->guessed_protocol_id].func != NULL))
+			ndpi_str->proto_defaults[flow->guessed_protocol_id].func(ndpi_str, flow),
+				func = ndpi_str->proto_defaults[flow->guessed_protocol_id].func;
+	}
+
+	for (a = 0; a < ndpi_str->callback_buffer_size_non_tcp_udp; a++)
+	{
+		if ((func != ndpi_str->callback_buffer_non_tcp_udp[a].func) && (ndpi_str->callback_buffer_non_tcp_udp[a].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer_non_tcp_udp[a].ndpi_selection_bitmask &&
+			NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask,
+								 ndpi_str->callback_buffer_non_tcp_udp[a].excluded_protocol_bitmask) == 0 &&
+			NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer_non_tcp_udp[a].detection_bitmask,
+								 detection_bitmask) != 0)
+		{
+
+			if (ndpi_str->callback_buffer_non_tcp_udp[a].func != NULL)
+				ndpi_str->callback_buffer_non_tcp_udp[a].func(ndpi_str, flow);
+
+			if (flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN)
+				break; /* Stop after detecting the first protocol */
+		}
+	}
+}
+/********************************************************** */
+void check_ndpi_udp_flow_func(struct ndpi_detection_module_struct *ndpi_str,
+							  struct ndpi_flow_struct *flow,
+							  NDPI_SELECTION_BITMASK_PROTOCOL_SIZE *ndpi_selection_packet)
+{
+	void *func = NULL;
+	u_int32_t a;
+	u_int16_t proto_index = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoIdx;
+	int16_t proto_id = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoId;
+	NDPI_PROTOCOL_BITMASK detection_bitmask;
+
+	NDPI_SAVE_AS_BITMASK(detection_bitmask, flow->packet.detected_protocol_stack[0]);
+
+	if ((proto_id != NDPI_PROTOCOL_UNKNOWN) && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer[proto_index].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer[proto_index].detection_bitmask, detection_bitmask) != 0 && (ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask)
+	{
+		if ((flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[flow->guessed_protocol_id].func != NULL))
+			ndpi_str->proto_defaults[flow->guessed_protocol_id].func(ndpi_str, flow),
+				func = ndpi_str->proto_defaults[flow->guessed_protocol_id].func;
+	}
+
+	for (a = 0; a < ndpi_str->callback_buffer_size_udp; a++)
+	{
+		if ((func != ndpi_str->callback_buffer_udp[a].func) && (ndpi_str->callback_buffer_udp[a].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer_udp[a].ndpi_selection_bitmask && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer_udp[a].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer_udp[a].detection_bitmask, detection_bitmask) != 0)
+		{
+			ndpi_str->callback_buffer_udp[a].func(ndpi_str, flow);
+
+			// NDPI_LOG_DBG(ndpi_str, "[UDP,CALL] dissector of protocol as callback_buffer idx =  %d\n",a);
+			if (flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN)
+				break; /* Stop after detecting the first protocol */
+		}
+		else if (_ndpi_debug_callbacks)
+			NDPI_LOG_DBG2(ndpi_str,
+						  "[UDP,SKIP] dissector of protocol as callback_buffer idx =  %d\n", a);
+	}
+}
+
+/* ******************************************************************** */
+void check_ndpi_tcp_flow_func(struct ndpi_detection_module_struct *ndpi_str,
+							  struct ndpi_flow_struct *flow,
+							  NDPI_SELECTION_BITMASK_PROTOCOL_SIZE *ndpi_selection_packet)
+{
+	void *func = NULL;
+	u_int32_t a;
+	u_int16_t proto_index = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoIdx;
+	int16_t proto_id = ndpi_str->proto_defaults[flow->guessed_protocol_id].protoId;
+	NDPI_PROTOCOL_BITMASK detection_bitmask;
+	/* SET DETECTION BIT MASK FROM APP PROTOCOL */
+	NDPI_SAVE_AS_BITMASK(detection_bitmask, flow->packet.detected_protocol_stack[0]);
+	/* TCP PAYLOAD */
+	if (flow->packet.payload_packet_len != 0)
+	{ /* PROTO ID NOT NULL AND PROTOCOL IS NOT EXCLUDED BY FLOW AND SELECTION BIT MASK IS INCLUDED BY FLOW */
+		if ((proto_id != NDPI_PROTOCOL_UNKNOWN) && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer[proto_index].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer[proto_index].detection_bitmask, detection_bitmask) != 0 && (ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask)
+		{
+			/* GO TO PROTOCOL FUNC IF PROTOCOL IS UNKNOWN AND FUNC IS NOT NULL */
+			if ((flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[flow->guessed_protocol_id].func != NULL))
+				ndpi_str->proto_defaults[flow->guessed_protocol_id].func(ndpi_str, flow),
+					func = ndpi_str->proto_defaults[flow->guessed_protocol_id].func;
+		}
+		/* FUNC OF GUESSED PROTOCOL DIDN'T MATCH */
+		if (flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN)
+		{
+			for (a = 0; a < ndpi_str->callback_buffer_size_tcp_payload; a++)
+			{ /* PROTO ID NOT NULL AND PROTOCOL IS NOT EXCLUDED BY FLOW AND SELECTION BIT MASK IS INCLUDED BY FLOW */
+				if ((func != ndpi_str->callback_buffer_tcp_payload[a].func) && (ndpi_str->callback_buffer_tcp_payload[a].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer_tcp_payload[a].ndpi_selection_bitmask && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer_tcp_payload[a].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer_tcp_payload[a].detection_bitmask, detection_bitmask) != 0)
+				{
+					ndpi_str->callback_buffer_tcp_payload[a].func(ndpi_str, flow);
+
+					if (flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN)
+						break; /* Stop after detecting the first protocol */
+				}
+			}
+		}
+	}
 	else
-		ret.category = flow->category;
+	{
+		/* no payload */
+		/* PROTO ID NOT NULL AND PROTOCOL IS NOT EXCLUDED BY FLOW AND SELECTION BIT MASK IS INCLUDED BY FLOW */
+		if ((proto_id != NDPI_PROTOCOL_UNKNOWN) && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer[proto_index].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer[proto_index].detection_bitmask, detection_bitmask) != 0 && (ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer[proto_index].ndpi_selection_bitmask)
+		{
+			/* GO TO PROTOCOL FUNC IF PROTOCOL IS UNKNOWN AND FUNC IS NOT NULL */
+			if ((flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[flow->guessed_protocol_id].func != NULL) && ((ndpi_str->callback_buffer[flow->guessed_protocol_id].ndpi_selection_bitmask & NDPI_SELECTION_BITMASK_PROTOCOL_HAS_PAYLOAD) == 0))
+				ndpi_str->proto_defaults[flow->guessed_protocol_id].func(ndpi_str, flow),
+					func = ndpi_str->proto_defaults[flow->guessed_protocol_id].func;
+		}
+		/* WARNING : WE SHOULD CHECK IF PROTOCOL IS STILL UNKNOWN */
+		/* FUNC OF GUESSED PROTOCOL DIDN'T MATCH */
+		for (a = 0; a < ndpi_str->callback_buffer_size_tcp_no_payload; a++)
+		{
+			if ((func != ndpi_str->callback_buffer_tcp_payload[a].func) && (ndpi_str->callback_buffer_tcp_no_payload[a].ndpi_selection_bitmask & *ndpi_selection_packet) == ndpi_str->callback_buffer_tcp_no_payload[a].ndpi_selection_bitmask && NDPI_BITMASK_COMPARE(flow->excluded_protocol_bitmask, ndpi_str->callback_buffer_tcp_no_payload[a].excluded_protocol_bitmask) == 0 && NDPI_BITMASK_COMPARE(ndpi_str->callback_buffer_tcp_no_payload[a].detection_bitmask, detection_bitmask) != 0)
+			{
+				ndpi_str->callback_buffer_tcp_no_payload[a].func(ndpi_str, flow);
 
-	flow->num_processed_pkts++;
+				if (flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN)
+					break; /* Stop after detecting the first protocol */
+			}
+		}
+	}
+}
 
-	/* Init default */
-	ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+/* ********************************************************************************* */
+
+/* ********************************************************************************* */
+
+void ndpi_check_flow_func(struct ndpi_detection_module_struct *ndpi_str,
+						  struct ndpi_flow_struct *flow,
+						  NDPI_SELECTION_BITMASK_PROTOCOL_SIZE *ndpi_selection_packet)
+{
+	if (flow->packet.tcp != NULL)
+		check_ndpi_tcp_flow_func(ndpi_str, flow, ndpi_selection_packet);
+	else if (flow->packet.udp != NULL)
+		check_ndpi_udp_flow_func(ndpi_str, flow, ndpi_selection_packet);
+	else
+		check_ndpi_other_flow_func(ndpi_str, flow, ndpi_selection_packet);
 }
 /* ********************************************************************************* */
+
+static void ndpi_reset_packet_line_info(struct ndpi_packet_struct *packet)
+{
+	packet->parsed_lines = 0,
+	packet->empty_line_position_set = 0,
+	packet->host_line.ptr = NULL,
+	packet->host_line.len = 0,
+	packet->referer_line.ptr = NULL,
+	packet->referer_line.len = 0,
+	packet->content_line.ptr = NULL,
+	packet->content_line.len = 0,
+	packet->accept_line.ptr = NULL,
+	packet->accept_line.len = 0,
+	packet->user_agent_line.ptr = NULL,
+	packet->user_agent_line.len = 0,
+	packet->http_url_name.ptr = NULL,
+	packet->http_url_name.len = 0,
+	packet->http_encoding.ptr = NULL,
+	packet->http_encoding.len = 0,
+	packet->http_transfer_encoding.ptr = NULL,
+	packet->http_transfer_encoding.len = 0,
+	packet->http_contentlen.ptr = NULL,
+	packet->http_contentlen.len = 0,
+	packet->http_cookie.ptr = NULL,
+	packet->http_cookie.len = 0,
+	packet->http_origin.len = 0,
+	packet->http_origin.ptr = NULL,
+	packet->http_x_session_type.ptr = NULL,
+	packet->http_x_session_type.len = 0,
+	packet->server_line.ptr = NULL,
+	packet->server_line.len = 0,
+	packet->http_method.ptr = NULL,
+	packet->http_method.len = 0,
+	packet->http_response.ptr = NULL,
+	packet->http_response.len = 0,
+	packet->http_num_headers = 0;
+}
+
+/* ********************************************************************************* */
+
+/* ********************************************************************************* */
+
+ndpi_protocol ndpi_detection_process_packet(struct ndpi_detection_module_struct *ndpi_str,
+					    struct ndpi_flow_struct *flow,
+					    const unsigned char *packet,
+					    const unsigned short packetlen,
+					    const u_int64_t current_tick_l,
+					    struct ndpi_id_struct *src,
+					    struct ndpi_id_struct *dst) {
+  NDPI_SELECTION_BITMASK_PROTOCOL_SIZE ndpi_selection_packet;
+  u_int32_t a;
+  ndpi_protocol ret = { NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED };
+
+  if(ndpi_str->ndpi_log_level >= NDPI_LOG_TRACE)
+    NDPI_LOG(flow ? flow->detected_protocol_stack[0]:NDPI_PROTOCOL_UNKNOWN,
+	     ndpi_str, NDPI_LOG_TRACE, "START packet processing\n");
+
+  if(flow == NULL)
+    return(ret);
+  else
+    ret.category = flow->category;
+
+  flow->num_processed_pkts++;
+
+  /* Init default */
+  ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+
+  if(flow->server_id == NULL) flow->server_id = dst; /* Default */
+  
+  if(flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN) {
+    // app protocol is detected
+    if(flow->check_extra_packets) {
+      ndpi_process_extra_packet(ndpi_str, flow, packet, packetlen, current_tick_l, src, dst);
+      /* Update in case of new match */
+      ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+      return(ret);
+    } else
+      //check master protocol
+      goto ret_protocols;
+  }  
+  //app protocol is unknown
+
+  /* need at least 20 bytes for ip header */
+  if(packetlen < 20) {
+    /* reset protocol which is normally done in init_packet_header */
+    ndpi_int_reset_packet_protocol(&flow->packet);
+    goto invalidate_ptr;
+  }
+
+  flow->packet.tick_timestamp_l = current_tick_l;
+  flow->packet.tick_timestamp = (u_int32_t)(current_tick_l/ndpi_str->ticks_per_second);
+
+  /* parse packet */
+  flow->packet.iph = (struct ndpi_iphdr *)packet;
+  /* we are interested in ipv4 packet */
+
+  if(ndpi_init_packet_header(ndpi_str, flow, packetlen) != 0)
+    goto invalidate_ptr;
+
+  /* detect traffic for tcp or udp only */
+  flow->src = src, flow->dst = dst;
+
+  ndpi_connection_tracking(ndpi_str, flow);
+
+  /* build ndpi_selection packet bitmask */
+  ndpi_selection_packet = NDPI_SELECTION_BITMASK_PROTOCOL_COMPLETE_TRAFFIC;
+  if(flow->packet.iph != NULL)
+    ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_IP | NDPI_SELECTION_BITMASK_PROTOCOL_IPV4_OR_IPV6;
+
+  if(flow->packet.tcp != NULL)
+    ndpi_selection_packet |=
+      (NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP | NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP);
+
+  if(flow->packet.udp != NULL)
+    ndpi_selection_packet |=
+      (NDPI_SELECTION_BITMASK_PROTOCOL_INT_UDP | NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP);
+
+  if(flow->packet.payload_packet_len != 0)
+    ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_HAS_PAYLOAD;
+
+  if(flow->packet.tcp_retransmission == 0)
+    ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_NO_TCP_RETRANSMISSION;
+
+#ifdef NDPI_DETECTION_SUPPORT_IPV6
+  if(flow->packet.iphv6 != NULL)
+    ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_IPV6 | NDPI_SELECTION_BITMASK_PROTOCOL_IPV4_OR_IPV6;
+#endif							/* NDPI_DETECTION_SUPPORT_IPV6 */
+
+  if((!flow->protocol_id_already_guessed)
+     && (
+#ifdef NDPI_DETECTION_SUPPORT_IPV6
+	 flow->packet.iphv6 ||
+#endif
+	 flow->packet.iph)) {
+    u_int16_t sport, dport;
+    u_int8_t protocol;
+    u_int8_t user_defined_proto;
+
+    flow->protocol_id_already_guessed = 1;
+
+#ifdef NDPI_DETECTION_SUPPORT_IPV6
+    if(flow->packet.iphv6 != NULL) {
+      protocol = flow->packet.iphv6->ip6_hdr.ip6_un1_nxt;
+    } else
+#endif
+      {
+	protocol = flow->packet.iph->protocol;
+      }
+
+    if(flow->packet.udp) sport = ntohs(flow->packet.udp->source), dport = ntohs(flow->packet.udp->dest);
+    else if(flow->packet.tcp) sport = ntohs(flow->packet.tcp->source), dport = ntohs(flow->packet.tcp->dest);
+    else sport = dport = 0;
+
+    /* guess protocol */
+    flow->guessed_protocol_id = (int16_t)ndpi_guess_protocol_id(ndpi_str, flow, protocol, sport, dport, &user_defined_proto);
+    flow->guessed_host_protocol_id = ndpi_guess_host_protocol_id(ndpi_str, flow);
+
+    if(ndpi_str->custom_categories.categories_loaded && flow->packet.iph) {
+      ndpi_fill_ip_protocol_category(ndpi_str, flow->packet.iph->saddr, flow->packet.iph->daddr, &ret);
+      flow->guessed_header_category = ret.category;
+    } else
+      flow->guessed_header_category = NDPI_PROTOCOL_CATEGORY_UNSPECIFIED;
+
+    if(flow->guessed_protocol_id > NDPI_MAX_SUPPORTED_PROTOCOLS) {
+      /* This is a custom protocol and it has priority over everything else */
+      ret.master_protocol = NDPI_PROTOCOL_UNKNOWN,
+	ret.app_protocol = flow->guessed_protocol_id ? flow->guessed_protocol_id : flow->guessed_host_protocol_id;
+      ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+      goto invalidate_ptr;
+    }
+
+    if(user_defined_proto && flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) {
+      if(flow->packet.iph) {
+	if(flow->guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN) {
+	  u_int8_t protocol_was_guessed;
+	    
+	  /* ret.master_protocol = flow->guessed_protocol_id , ret.app_protocol = flow->guessed_host_protocol_id; /\* ****** *\/ */
+	  ret = ndpi_detection_giveup(ndpi_str, flow, 0, &protocol_was_guessed);
+	}
+
+	ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+	goto invalidate_ptr;
+      }
+    } else {
+      /* guess host protocol */
+      if(flow->packet.iph) {
+	struct in_addr addr;
+
+	addr.s_addr = flow->packet.iph->saddr;
+	flow->guessed_host_protocol_id = ndpi_network_ptree_match(ndpi_str, &addr);
+
+	if(flow->guessed_host_protocol_id == NDPI_PROTOCOL_UNKNOWN) {
+	  addr.s_addr = flow->packet.iph->daddr;
+	  flow->guessed_host_protocol_id = ndpi_network_ptree_match(ndpi_str, &addr);
+	}
+      }
+    }
+  }
+
+  if(flow->guessed_host_protocol_id > NDPI_MAX_SUPPORTED_PROTOCOLS) {
+    /* This is a custom protocol and it has priority over everything else */
+    ret.master_protocol = NDPI_PROTOCOL_UNKNOWN, ret.app_protocol = flow->guessed_host_protocol_id;
+
+    if(flow->packet.tcp && (ret.master_protocol == NDPI_PROTOCOL_UNKNOWN)) {
+      /* Minimal guess for HTTP/SSL-based protocols */
+      int i;
+
+      for(i=0; i<2; i++) {
+	u_int16_t port = (i == 0) ? ntohs(flow->packet.tcp->dest) : ntohs(flow->packet.tcp->source);
+
+	switch(port) {
+	case 80:
+	  ret.master_protocol = NDPI_PROTOCOL_HTTP;
+	  break;
+	case 443:
+	  ret.master_protocol = NDPI_PROTOCOL_TLS; /* QUIC could also match */
+	  break;
+	}
+
+	if(ret.master_protocol != NDPI_PROTOCOL_UNKNOWN)
+	  break;
+      }
+    }
+
+    ndpi_check_flow_func(ndpi_str, flow, &ndpi_selection_packet);
+    ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+    goto invalidate_ptr;
+  }
+
+  ndpi_check_flow_func(ndpi_str, flow, &ndpi_selection_packet);
+
+  a = flow->packet.detected_protocol_stack[0];
+  if(NDPI_COMPARE_PROTOCOL_TO_BITMASK(ndpi_str->detection_bitmask, a) == 0)
+    a = NDPI_PROTOCOL_UNKNOWN;
+
+  if(a != NDPI_PROTOCOL_UNKNOWN) {
+    int i;
+
+    for(i=0; i<sizeof(flow->host_server_name); i++) {
+      if(flow->host_server_name[i] != '\0')
+	flow->host_server_name[i] = tolower(flow->host_server_name[i]);
+      else {
+	flow->host_server_name[i] ='\0';
+	break;
+      }
+    }
+  }
+
+ ret_protocols:
+  if(flow->detected_protocol_stack[1] != NDPI_PROTOCOL_UNKNOWN) {
+    ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+
+    if(ret.app_protocol == ret.master_protocol)
+      ret.master_protocol = NDPI_PROTOCOL_UNKNOWN;
+  } else
+    ret.app_protocol = flow->detected_protocol_stack[0];
+
+  /* Don't overwrite the category if already set */
+  if(flow->category == NDPI_PROTOCOL_CATEGORY_UNSPECIFIED)
+    ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+  else
+    ret.category = flow->category;
+
+  if((flow->num_processed_pkts == 1)
+     && (ret.master_protocol == NDPI_PROTOCOL_UNKNOWN)
+     && (ret.app_protocol == NDPI_PROTOCOL_UNKNOWN)
+     && flow->packet.tcp
+     && (flow->packet.tcp->syn == 0)
+     && (flow->guessed_protocol_id == 0)
+     ) {
+    u_int8_t protocol_was_guessed;
+    
+    /*
+      This is a TCP flow
+      - whose first packet is NOT a SYN
+      - no protocol has been detected
+
+      We don't see how future packets can match anything
+      hence we giveup here
+    */
+    ret = ndpi_detection_giveup(ndpi_str, flow, 0, &protocol_was_guessed);
+  }
+
+ invalidate_ptr:
+  /*
+     Invalidate packet memory to avoid accessing the pointers below
+     when the packet is no longer accessible
+  */
+  flow->packet.iph = NULL, flow->packet.tcp = NULL, flow->packet.udp = NULL, flow->packet.payload = NULL;
+  ndpi_reset_packet_line_info(&flow->packet);
+
+  return(ret);
+}
+
 /* ********************************************************************************* */
 
 void ndpi_int_change_flow_protocol(struct ndpi_detection_module_struct *ndpi_str,
@@ -884,374 +1318,202 @@ void ndpi_int_change_flow_protocol(struct ndpi_detection_module_struct *ndpi_str
 /* ********************************************************************************* */
 
 void ndpi_int_change_packet_protocol(struct ndpi_detection_module_struct *ndpi_str,
-									 struct ndpi_flow_struct *flow,
-									 u_int16_t upper_detected_protocol,
-									 u_int16_t lower_detected_protocol)
-{
-	struct ndpi_packet_struct *packet = &flow->packet;
-	/* NOTE: everything below is identically to change_flow_protocol
+				     struct ndpi_flow_struct *flow,
+				     u_int16_t upper_detected_protocol,
+				     u_int16_t lower_detected_protocol) {
+  struct ndpi_packet_struct *packet = &flow->packet;
+  /* NOTE: everything below is identically to change_flow_protocol
    *        except flow->packet If you want to change something here,
    *        don't! Change it for the flow function and apply it here
    *        as well */
 
-	if (!packet)
-		return;
+  if(!packet)
+    return;
 
-	packet->detected_protocol_stack[0] = upper_detected_protocol,
-	packet->detected_protocol_stack[1] = lower_detected_protocol;
-{
-	NDPI_SELECTION_BITMASK_PROTOCOL_SIZE ndpi_selection_packet;
-	u_int32_t a;
-	ndpi_protocol ret = {NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED};
-
-	if (ndpi_str->ndpi_log_level >= NDPI_LOG_TRACE)
-		NDPI_LOG(flow ? flow->detected_protocol_stack[0] : NDPI_PROTOCOL_UNKNOWN,
-				 ndpi_str, NDPI_LOG_TRACE, "START packet processing\n");
-
-	if (flow == NULL)
-		return (ret);
-	else
-		ret.category = flow->category;
-
-	flow->num_processed_pkts++;
-
-	/* Init default */
-	ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
-
-	if (flow->server_id == NULL)
-		flow->server_id = dst; /* Default */
-
-	if (flow->detected_protocol_stack[0] != NDPI_PROTOCOL_UNKNOWN)
-	{
-		if (flow->check_extra_packets)
-		{
-			ndpi_process_extra_packet(ndpi_str, flow, packet, packetlen, current_tick_l, src, dst);
-			/* Update in case of new match */
-			ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
-			return (ret);
-		}
-		else
-		{
-			goto ret_protocols;
-		}
-	}
-
-	/* need at least 20 bytes for ip header */
-	if (packetlen < 20)
-	{
-		/* reset protocol which is normally done in init_packet_header */
-		ndpi_int_reset_packet_protocol(&flow->packet);
-		goto invalidate_ptr;
-	}
-
-	flow->packet.tick_timestamp_l = current_tick_l;
-	flow->packet.tick_timestamp = (u_int32_t)(current_tick_l / ndpi_str->ticks_per_second);
-
-	/* parse packet */
-	flow->packet.iph = (struct ndpi_iphdr *)packet;
-	/* we are interested in ipv4 packet */
-
-	if (ndpi_init_packet_header(ndpi_str, flow, packetlen) != 0)
-		goto invalidate_ptr;
-
-	/* detect traffic for tcp or udp only */
-	flow->src = src, flow->dst = dst;
-
-	ndpi_connection_tracking(ndpi_str, flow);
-
-	/* build ndpi_selection packet bitmask */
-	ndpi_selection_packet = NDPI_SELECTION_BITMASK_PROTOCOL_COMPLETE_TRAFFIC;
-	if (flow->packet.iph != NULL)
-		ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_IP | NDPI_SELECTION_BITMASK_PROTOCOL_IPV4_OR_IPV6;
-
-	if (flow->packet.tcp != NULL)
-		ndpi_selection_packet |=
-			(NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP | NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP);
-
-	if (flow->packet.udp != NULL)
-		ndpi_selection_packet |=
-			(NDPI_SELECTION_BITMASK_PROTOCOL_INT_UDP | NDPI_SELECTION_BITMASK_PROTOCOL_INT_TCP_OR_UDP);
-
-	if (flow->packet.payload_packet_len != 0)
-		ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_HAS_PAYLOAD;
-
-	if (flow->packet.tcp_retransmission == 0)
-		ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_NO_TCP_RETRANSMISSION;
-
-#ifdef NDPI_DETECTION_SUPPORT_IPV6
-	if (flow->packet.iphv6 != NULL)
-		ndpi_selection_packet |= NDPI_SELECTION_BITMASK_PROTOCOL_IPV6 | NDPI_SELECTION_BITMASK_PROTOCOL_IPV4_OR_IPV6;
-#endif /* NDPI_DETECTION_SUPPORT_IPV6 */
-
-	if ((!flow->protocol_id_already_guessed) && (
-#ifdef NDPI_DETECTION_SUPPORT_IPV6
-													flow->packet.iphv6 ||
-#endif
-													flow->packet.iph))
-	{
-		u_int16_t sport, dport;
-		u_int8_t protocol;
-		u_int8_t user_defined_proto;
-
-		flow->protocol_id_already_guessed = 1;
-
-#ifdef NDPI_DETECTION_SUPPORT_IPV6
-		if (flow->packet.iphv6 != NULL)
-		{
-			protocol = flow->packet.iphv6->ip6_hdr.ip6_un1_nxt;
-		}
-		else
-#endif
-		{
-			protocol = flow->packet.iph->protocol;
-		}
-
-		if (flow->packet.udp)
-			sport = ntohs(flow->packet.udp->source), dport = ntohs(flow->packet.udp->dest);
-		else if (flow->packet.tcp)
-			sport = ntohs(flow->packet.tcp->source), dport = ntohs(flow->packet.tcp->dest);
-		else
-			sport = dport = 0;
-
-		/* guess protocol */
-		flow->guessed_protocol_id = (int16_t)ndpi_guess_protocol_id(ndpi_str, flow, protocol, sport, dport, &user_defined_proto);
-		flow->guessed_host_protocol_id = ndpi_guess_host_protocol_id(ndpi_str, flow);
-
-		if (ndpi_str->custom_categories.categories_loaded && flow->packet.iph)
-		{
-			ndpi_fill_ip_protocol_category(ndpi_str, flow->packet.iph->saddr, flow->packet.iph->daddr, &ret);
-			flow->guessed_header_category = ret.category;
-		}
-		else
-		{
-			flow->guessed_header_category = NDPI_PROTOCOL_CATEGORY_UNSPECIFIED;
-		}
-
-		if (flow->guessed_protocol_id > NDPI_MAX_SUPPORTED_PROTOCOLS)
-		{
-			/* This is a custom protocol and it has priority over everything else */
-			ret.master_protocol = NDPI_PROTOCOL_UNKNOWN,
-			ret.app_protocol = flow->guessed_protocol_id ? flow->guessed_protocol_id : flow->guessed_host_protocol_id;
-			ndpi_fill_protocol_category(ndpi_str, flow, &ret);
-			goto invalidate_ptr;
-		}
-
-		if (user_defined_proto && flow->guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN)
-		{
-			if (flow->packet.iph)
-			{
-				if (flow->guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN)
-				{
-					u_int8_t protocol_was_guessed;
-
-					/* ret.master_protocol = flow->guessed_protocol_id , ret.app_protocol = flow->guessed_host_protocol_id; /\* ****** *\/ */
-					ret = ndpi_detection_giveup(ndpi_str, flow, 0, &protocol_was_guessed);
-				}
-
-				ndpi_fill_protocol_category(ndpi_str, flow, &ret);
-				goto invalidate_ptr;
-			}
-		}
-		else
-		{
-			/* guess host protocol */
-			if (flow->packet.iph)
-			{
-				struct in_addr addr;
-
-				addr.s_addr = flow->packet.iph->saddr;
-				flow->guessed_host_protocol_id = ndpi_network_ptree_match(ndpi_str, &addr);
-
-				if (flow->guessed_host_protocol_id == NDPI_PROTOCOL_UNKNOWN)
-				{
-					addr.s_addr = flow->packet.iph->daddr;
-					flow->guessed_host_protocol_id = ndpi_network_ptree_match(ndpi_str, &addr);
-				}
-			}
-		}
-	}
+  packet->detected_protocol_stack[0] = upper_detected_protocol,
+    packet->detected_protocol_stack[1] = lower_detected_protocol;
 }
 
 /* ********************************************************************************* */
 
-/* generic function for changing the protocol
+	/* generic function for changing the protocol
  *
  * what it does is:
  * 1.update the flow protocol stack with the new protocol
  * 2.update the packet protocol stack with the new protocol
  */
-void ndpi_int_change_protocol(struct ndpi_detection_module_struct *ndpi_str,
-							  struct ndpi_flow_struct *flow,
-							  u_int16_t upper_detected_protocol,
-							  u_int16_t lower_detected_protocol)
-{
-	if ((upper_detected_protocol == NDPI_PROTOCOL_UNKNOWN) && (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN))
-		upper_detected_protocol = lower_detected_protocol;
-
-	if (upper_detected_protocol == lower_detected_protocol)
-		lower_detected_protocol = NDPI_PROTOCOL_UNKNOWN;
-
-	if ((upper_detected_protocol != NDPI_PROTOCOL_UNKNOWN) && (lower_detected_protocol == NDPI_PROTOCOL_UNKNOWN))
+	void ndpi_int_change_protocol(struct ndpi_detection_module_struct * ndpi_str,
+								  struct ndpi_flow_struct * flow,
+								  u_int16_t upper_detected_protocol,
+								  u_int16_t lower_detected_protocol)
 	{
-		if ((flow->guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (upper_detected_protocol != flow->guessed_host_protocol_id))
+		if ((upper_detected_protocol == NDPI_PROTOCOL_UNKNOWN) && (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN))
+			upper_detected_protocol = lower_detected_protocol;
+
+		if (upper_detected_protocol == lower_detected_protocol)
+			lower_detected_protocol = NDPI_PROTOCOL_UNKNOWN;
+
+		if ((upper_detected_protocol != NDPI_PROTOCOL_UNKNOWN) && (lower_detected_protocol == NDPI_PROTOCOL_UNKNOWN))
 		{
-			if (ndpi_str->proto_defaults[upper_detected_protocol].can_have_a_subprotocol)
+			if ((flow->guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN) && (upper_detected_protocol != flow->guessed_host_protocol_id))
 			{
-				lower_detected_protocol = upper_detected_protocol;
-				upper_detected_protocol = flow->guessed_host_protocol_id;
+				if (ndpi_str->proto_defaults[upper_detected_protocol].can_have_a_subprotocol)
+				{
+					lower_detected_protocol = upper_detected_protocol;
+					upper_detected_protocol = flow->guessed_host_protocol_id;
+				}
 			}
 		}
+
+		ndpi_int_change_flow_protocol(ndpi_str, flow,
+									  upper_detected_protocol, lower_detected_protocol);
+		ndpi_int_change_packet_protocol(ndpi_str, flow,
+										upper_detected_protocol, lower_detected_protocol);
 	}
 
-	ndpi_int_change_flow_protocol(ndpi_str, flow,
-								  upper_detected_protocol, lower_detected_protocol);
-	ndpi_int_change_packet_protocol(ndpi_str, flow,
-									upper_detected_protocol, lower_detected_protocol);
-}
+	/* ********************************************************************************* */
 
-/* ********************************************************************************* */
-
-void ndpi_set_detected_protocol(struct ndpi_detection_module_struct *ndpi_str,
-								struct ndpi_flow_struct *flow,
-								u_int16_t upper_detected_protocol,
-								u_int16_t lower_detected_protocol)
-{
-	struct ndpi_id_struct *src = flow->src, *dst = flow->dst;
-	ndpi_int_change_protocol(ndpi_str, flow, upper_detected_protocol, lower_detected_protocol);
-	if (src != NULL)
+	void ndpi_set_detected_protocol(struct ndpi_detection_module_struct * ndpi_str,
+									struct ndpi_flow_struct * flow,
+									u_int16_t upper_detected_protocol,
+									u_int16_t lower_detected_protocol)
 	{
-		NDPI_ADD_PROTOCOL_TO_BITMASK(src->detected_protocol_bitmask, upper_detected_protocol);
-		if (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN)
-			NDPI_ADD_PROTOCOL_TO_BITMASK(src->detected_protocol_bitmask, lower_detected_protocol);
-	}
-	if (dst != NULL)
-	{
-		NDPI_ADD_PROTOCOL_TO_BITMASK(dst->detected_protocol_bitmask, upper_detected_protocol);
-
-		if (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN)
-			NDPI_ADD_PROTOCOL_TO_BITMASK(dst->detected_protocol_bitmask, lower_detected_protocol);
-	}
-}
-/* ********************************************************************************* */
-
-ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_str,
-									struct ndpi_flow_struct *flow,
-									u_int8_t enable_guess,
-									u_int8_t *protocol_was_guessed)
-{
-	ndpi_protocol ret = {NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED};
-	*protocol_was_guessed = 0;
-	if (flow == NULL)
-		return (ret);
-
-	/* Init defaults */
-	ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
-	ret.category = flow->category;
-
-	/* Ensure that we don't change our mind if detection is already complete */
-	if ((ret.master_protocol != NDPI_PROTOCOL_UNKNOWN) && (ret.app_protocol != NDPI_PROTOCOL_UNKNOWN))
-		return (ret);
-
-	/* TODO: add the remaining stage_XXXX protocols */
-	if (flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN)
-	{
-		u_int16_t guessed_protocol_id, guessed_host_protocol_id;
-		if (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN)
-			goto check_stun_export;
-		else if ((flow->guessed_protocol_id == NDPI_PROTOCOL_HANGOUT_DUO) || (flow->guessed_protocol_id == NDPI_PROTOCOL_MESSENGER) || (flow->guessed_protocol_id == NDPI_PROTOCOL_WHATSAPP_CALL))
-			ndpi_set_detected_protocol(ndpi_str, flow, flow->guessed_protocol_id, NDPI_PROTOCOL_UNKNOWN);
-		else if ((flow->l4.tcp.tls_seen_client_cert == 1) && (flow->protos.stun_ssl.ssl.client_certificate[0] != '\0'))
+		struct ndpi_id_struct *src = flow->src, *dst = flow->dst;
+		ndpi_int_change_protocol(ndpi_str, flow, upper_detected_protocol, lower_detected_protocol);
+		if (src != NULL)
 		{
-			ndpi_set_detected_protocol(ndpi_str, flow, NDPI_PROTOCOL_TLS, NDPI_PROTOCOL_UNKNOWN);
+			NDPI_ADD_PROTOCOL_TO_BITMASK(src->detected_protocol_bitmask, upper_detected_protocol);
+			if (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN)
+				NDPI_ADD_PROTOCOL_TO_BITMASK(src->detected_protocol_bitmask, lower_detected_protocol);
+		}
+		if (dst != NULL)
+		{
+			NDPI_ADD_PROTOCOL_TO_BITMASK(dst->detected_protocol_bitmask, upper_detected_protocol);
+
+			if (lower_detected_protocol != NDPI_PROTOCOL_UNKNOWN)
+				NDPI_ADD_PROTOCOL_TO_BITMASK(dst->detected_protocol_bitmask, lower_detected_protocol);
+		}
+	}
+	/* ********************************************************************************* */
+
+	ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct * ndpi_str,
+										struct ndpi_flow_struct * flow,
+										u_int8_t enable_guess,
+										u_int8_t * protocol_was_guessed)
+	{
+		ndpi_protocol ret = {NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED};
+		*protocol_was_guessed = 0;
+		if (flow == NULL)
+			return (ret);
+
+		/* Init defaults */
+		ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
+		ret.category = flow->category;
+
+		/* Ensure that we don't change our mind if detection is already complete */
+		if ((ret.master_protocol != NDPI_PROTOCOL_UNKNOWN) && (ret.app_protocol != NDPI_PROTOCOL_UNKNOWN))
+			return (ret);
+
+		/* TODO: add the remaining stage_XXXX protocols */
+		if (flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN)
+		{
+			u_int16_t guessed_protocol_id, guessed_host_protocol_id;
+			if (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN)
+				goto check_stun_export;
+			else if ((flow->guessed_protocol_id == NDPI_PROTOCOL_HANGOUT_DUO) || (flow->guessed_protocol_id == NDPI_PROTOCOL_MESSENGER) || (flow->guessed_protocol_id == NDPI_PROTOCOL_WHATSAPP_CALL))
+				ndpi_set_detected_protocol(ndpi_str, flow, flow->guessed_protocol_id, NDPI_PROTOCOL_UNKNOWN);
+			else if ((flow->l4.tcp.tls_seen_client_cert == 1) && (flow->protos.stun_ssl.ssl.client_certificate[0] != '\0'))
+			{
+				ndpi_set_detected_protocol(ndpi_str, flow, NDPI_PROTOCOL_TLS, NDPI_PROTOCOL_UNKNOWN);
+			}
+			else
+			{
+				if ((flow->guessed_protocol_id == NDPI_PROTOCOL_UNKNOWN) && (flow->packet.l4_protocol == IPPROTO_TCP) && (flow->l4.tcp.tls_stage > 1))
+					flow->guessed_protocol_id = NDPI_PROTOCOL_TLS;
+
+				guessed_protocol_id = flow->guessed_protocol_id, guessed_host_protocol_id = flow->guessed_host_protocol_id;
+
+				if ((guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN) && ((flow->packet.l4_protocol == IPPROTO_UDP) && NDPI_ISSET(&flow->excluded_protocol_bitmask, guessed_host_protocol_id) && is_udp_guessable_protocol(guessed_host_protocol_id)))
+					flow->guessed_host_protocol_id = guessed_host_protocol_id = NDPI_PROTOCOL_UNKNOWN;
+
+				/* Ignore guessed protocol if they have been discarded */
+				if ((guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN)
+					// && (guessed_host_protocol_id == NDPI_PROTOCOL_UNKNOWN)
+					&& (flow->packet.l4_protocol == IPPROTO_UDP) && NDPI_ISSET(&flow->excluded_protocol_bitmask, guessed_protocol_id) && is_udp_guessable_protocol(guessed_protocol_id))
+					flow->guessed_protocol_id = guessed_protocol_id = NDPI_PROTOCOL_UNKNOWN;
+
+				if ((guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) || (guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN))
+				{
+					if ((guessed_protocol_id == 0) && (flow->protos.stun_ssl.stun.num_binding_requests > 0) && (flow->protos.stun_ssl.stun.num_processed_pkts > 0))
+						guessed_protocol_id = NDPI_PROTOCOL_STUN;
+
+					if (flow->host_server_name[0] != '\0')
+					{
+						ndpi_protocol_match_result ret_match;
+						ndpi_match_host_subprotocol(ndpi_str, flow,
+													(char *)flow->host_server_name,
+													strlen((const char *)flow->host_server_name),
+													&ret_match,
+													NDPI_PROTOCOL_DNS);
+						if (ret_match.protocol_id != NDPI_PROTOCOL_UNKNOWN)
+							guessed_host_protocol_id = ret_match.protocol_id;
+					}
+
+					ndpi_int_change_protocol(ndpi_str, flow,
+											 guessed_host_protocol_id,
+											 guessed_protocol_id);
+				}
+			}
 		}
 		else
 		{
-			if ((flow->guessed_protocol_id == NDPI_PROTOCOL_UNKNOWN) && (flow->packet.l4_protocol == IPPROTO_TCP) && (flow->l4.tcp.tls_stage > 1))
-				flow->guessed_protocol_id = NDPI_PROTOCOL_TLS;
+			flow->detected_protocol_stack[1] = flow->guessed_protocol_id,
+			flow->detected_protocol_stack[0] = flow->guessed_host_protocol_id;
 
-			guessed_protocol_id = flow->guessed_protocol_id, guessed_host_protocol_id = flow->guessed_host_protocol_id;
+			if (flow->detected_protocol_stack[1] == flow->detected_protocol_stack[0])
+				flow->detected_protocol_stack[1] = flow->guessed_host_protocol_id;
+		}
 
-			if ((guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN) && ((flow->packet.l4_protocol == IPPROTO_UDP) && NDPI_ISSET(&flow->excluded_protocol_bitmask, guessed_host_protocol_id) && is_udp_guessable_protocol(guessed_host_protocol_id)))
-				flow->guessed_host_protocol_id = guessed_host_protocol_id = NDPI_PROTOCOL_UNKNOWN;
-
-			/* Ignore guessed protocol if they have been discarded */
-			if ((guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN)
-				// && (guessed_host_protocol_id == NDPI_PROTOCOL_UNKNOWN)
-				&& (flow->packet.l4_protocol == IPPROTO_UDP) && NDPI_ISSET(&flow->excluded_protocol_bitmask, guessed_protocol_id) && is_udp_guessable_protocol(guessed_protocol_id))
-				flow->guessed_protocol_id = guessed_protocol_id = NDPI_PROTOCOL_UNKNOWN;
-
-			if ((guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) || (guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN))
+		if ((flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN) && (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN))
+		{
+		check_stun_export:
+			if (flow->protos.stun_ssl.stun.num_processed_pkts || flow->protos.stun_ssl.stun.num_udp_pkts)
 			{
-				if ((guessed_protocol_id == 0) && (flow->protos.stun_ssl.stun.num_binding_requests > 0) && (flow->protos.stun_ssl.stun.num_processed_pkts > 0))
-					guessed_protocol_id = NDPI_PROTOCOL_STUN;
-
-				if (flow->host_server_name[0] != '\0')
-				{
-					ndpi_protocol_match_result ret_match;
-					ndpi_match_host_subprotocol(ndpi_str, flow,
-												(char *)flow->host_server_name,
-												strlen((const char *)flow->host_server_name),
-												&ret_match,
-												NDPI_PROTOCOL_DNS);
-					if (ret_match.protocol_id != NDPI_PROTOCOL_UNKNOWN)
-						guessed_host_protocol_id = ret_match.protocol_id;
-				}
-
-				ndpi_int_change_protocol(ndpi_str, flow,
-										 guessed_host_protocol_id,
-										 guessed_protocol_id);
+				// if(/* (flow->protos.stun_ssl.stun.num_processed_pkts >= NDPI_MIN_NUM_STUN_DETECTION) */
+				ndpi_set_detected_protocol(ndpi_str, flow,
+										   flow->guessed_host_protocol_id,
+										   NDPI_PROTOCOL_STUN);
 			}
 		}
-	}
-	else
-	{
-		flow->detected_protocol_stack[1] = flow->guessed_protocol_id,
-		flow->detected_protocol_stack[0] = flow->guessed_host_protocol_id;
 
-		if (flow->detected_protocol_stack[1] == flow->detected_protocol_stack[0])
-			flow->detected_protocol_stack[1] = flow->guessed_host_protocol_id;
-	}
+		ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
 
-	if ((flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN) && (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN))
-	{
-	check_stun_export:
-		if (flow->protos.stun_ssl.stun.num_processed_pkts || flow->protos.stun_ssl.stun.num_udp_pkts)
+		if (ret.master_protocol == NDPI_PROTOCOL_STUN)
 		{
-			// if(/* (flow->protos.stun_ssl.stun.num_processed_pkts >= NDPI_MIN_NUM_STUN_DETECTION) */
-			ndpi_set_detected_protocol(ndpi_str, flow,
-									   flow->guessed_host_protocol_id,
-									   NDPI_PROTOCOL_STUN);
-		}
-	}
-
-	ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
-
-	if (ret.master_protocol == NDPI_PROTOCOL_STUN)
-	{
-		if (ret.app_protocol == NDPI_PROTOCOL_FACEBOOK)
-			ret.app_protocol = NDPI_PROTOCOL_MESSENGER;
-		else if (ret.app_protocol == NDPI_PROTOCOL_GOOGLE)
-		{
-			/*
+			if (ret.app_protocol == NDPI_PROTOCOL_FACEBOOK)
+				ret.app_protocol = NDPI_PROTOCOL_MESSENGER;
+			else if (ret.app_protocol == NDPI_PROTOCOL_GOOGLE)
+			{
+				/*
 			As Google has recently introduced Duo,
 			we need to distinguish between it and hangout
 			thing that should be handled by the STUN dissector
   	  	  */
-			ret.app_protocol = NDPI_PROTOCOL_HANGOUT_DUO;
+				ret.app_protocol = NDPI_PROTOCOL_HANGOUT_DUO;
+			}
 		}
+
+		if (ret.app_protocol != NDPI_PROTOCOL_UNKNOWN)
+			ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+
+		return (ret);
 	}
+	/*********************************************************************************** */
 
-	if (ret.app_protocol != NDPI_PROTOCOL_UNKNOWN)
-		ndpi_fill_protocol_category(ndpi_str, flow, &ret);
+	/* ********************************************************************************* */
 
-	return (ret);
-}
-/*********************************************************************************** */
-
-/* ********************************************************************************* */
-
-int main(void)
-{
-	puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
-	return EXIT_SUCCESS;
-}
+	int main(void)
+	{
+		puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
+		return EXIT_SUCCESS;
+	}

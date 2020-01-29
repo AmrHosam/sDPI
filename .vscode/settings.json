@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "reader_util.h": "c",
-        "__node_handle": "c"
+        "__node_handle": "c",
+        "ndpi_api.h": "c",
+        "*.inc": "c"
     }
 }
