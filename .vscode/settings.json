@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "reader_util.h": "c",
+        "notsure.h": "c",
+        "ndpi_main.h": "c"
         "__node_handle": "c"
     }
 }
