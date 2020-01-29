@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "reader_util.h": "c"
+        "reader_util.h": "c",
+        "notsure.h": "c",
+        "ndpi_main.h": "c"
     }
 }
