@@ -20,6 +20,125 @@
 static void  (*_ndpi_flow_free)(void *ptr);
 static void  (*_ndpi_free)(void *ptr);
 static int _ndpi_debug_callbacks = 0;
+* ****************************************** */
+
+/* Keep it in order and in sync with ndpi_protocol_category_t in ndpi_typedefs.h */
+static const char* categories[] = {
+  "Unspecified",
+  "Media",
+  "VPN",
+  "Email",
+  "DataTransfer",
+  "Web",
+  "SocialNetwork",
+  "Download-FileTransfer-FileSharing",
+  "Game",
+  "Chat",
+  "VoIP",
+  "Database",
+  "RemoteAccess",
+  "Cloud",
+  "Network",
+  "Collaborative",
+  "RPC",
+  "Streaming",
+  "System",
+  "SoftwareUpdate",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "Music",
+  "Video",
+  "Shopping",
+  "Productivity",
+  "FileSharing",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "",
+  "Mining", /* 99 */
+  "Malware",
+  "Advertisement",
+  "Banned_Site",
+  "Site_Unavailable",
+  "Allowed_Site",
+  "Antimalware",
+};
+/* ****************************************** */
+
+static void *(*_ndpi_flow_malloc)(size_t size);
+static void  (*_ndpi_flow_free)(void *ptr);
+
+static void *(*_ndpi_malloc)(size_t size);
+static void  (*_ndpi_free)(void *ptr);
+
 typedef struct ndpi_default_ports_tree_node
 {
 	ndpi_proto_defaults_t *proto;
@@ -311,7 +430,7 @@ static void ndpi_init_ptree_ipv4(struct ndpi_detection_module_struct *ndpi_str, 
 /***********  recursive ndoi malloc   **************/
 
 void* ndpi_malloc(size_t size) { return(_ndpi_malloc ? _ndpi_malloc(size) : malloc(size)); }
-
+void set_ndpi_malloc(void* (*__ndpi_malloc)(size_t size)) { _ndpi_malloc = __ndpi_malloc; }
 /* ****************************************** */
 
 char * ndpi_strdup(const char *s)
@@ -327,7 +446,33 @@ char * ndpi_strdup(const char *s)
   return(m);
 }
 /* ****************************************************** */
+/* ****************************************************** */
 
+int ndpi_match_string(void *_automa, char *string_to_match) {
+  AC_REP_t match = { NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED, NDPI_PROTOCOL_UNRATED };
+  AC_TEXT_t ac_input_text;
+  AC_AUTOMATA_t *automa = (AC_AUTOMATA_t*)_automa;
+  int rc;
+
+  if((automa == NULL)
+     || (string_to_match == NULL)
+     || (string_to_match[0] == '\0'))
+    return(-2);
+
+  ac_input_text.astring = string_to_match, ac_input_text.length = strlen(string_to_match);
+  rc = ac_automata_search(automa, &ac_input_text, &match);
+
+  /*
+    As ac_automata_search can detect partial matches and continue the search process
+    in case rc == 0 (i.e. no match), we need to check if there is a partial match
+    and in this case return it
+  */
+  if((rc == 0) && (match.number != 0)) rc = 1;
+
+  return(rc ? match.number : 0);
+}
+
+/* ****************************************************** */
 static int ndpi_string_to_automa(struct ndpi_detection_module_struct *ndpi_str,
 				 ndpi_automa *automa,
 				 char *value, u_int16_t protocol_id,
