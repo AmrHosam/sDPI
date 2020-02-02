@@ -36,6 +36,47 @@
 #include <libgen.h>
 
 #include "reader_util.h"
+
+
+/********/
+static struct option longopts[] = {
+  /* mandatory extcap options */
+  { "extcap-interfaces", no_argument, NULL, '0'},
+  { "extcap-version", optional_argument, NULL, '1'},
+  { "extcap-dlts", no_argument, NULL, '2'},
+  { "extcap-interface", required_argument, NULL, '3'},
+  { "extcap-config", no_argument, NULL, '4'},
+  { "capture", no_argument, NULL, '5'},
+  { "extcap-capture-filter", required_argument, NULL, '6'},
+  { "fifo", required_argument, NULL, '7'},
+  { "debug", no_argument, NULL, '8'},
+  { "dbg-proto", required_argument, NULL, 257},
+  { "ndpi-proto-filter", required_argument, NULL, '9'},
+
+  /* ndpiReader options */
+  { "enable-protocol-guess", no_argument, NULL, 'd'},
+  { "categories", required_argument, NULL, 'c'},
+  { "csv-dump", required_argument, NULL, 'C'},
+  { "interface", required_argument, NULL, 'i'},
+  { "filter", required_argument, NULL, 'f'},
+  { "cpu-bind", required_argument, NULL, 'g'},
+  { "loops", required_argument, NULL, 'l'},
+  { "num-threads", required_argument, NULL, 'n'},
+
+  { "protos", required_argument, NULL, 'p'},
+  { "capture-duration", required_argument, NULL, 's'},
+  { "decode-tunnels", no_argument, NULL, 't'},
+  { "revision", no_argument, NULL, 'r'},
+  { "verbose", no_argument, NULL, 'v'},
+  { "version", no_argument, NULL, 'V'},
+  { "help", no_argument, NULL, 'h'},
+  { "joy", required_argument, NULL, 'J'},
+  { "payload-analysis", required_argument, NULL, 'P'},
+  { "result-path", required_argument, NULL, 'w'},
+  { "quiet", no_argument, NULL, 'q'},
+
+  {0, 0, 0, 0}
+};
 /* **********************************************************parseopations************************************************* */
 
 static void parseOptions(int argc, char **argv) {
