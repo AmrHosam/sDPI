@@ -85,6 +85,8 @@ struct reader_thread {
   u_int32_t num_idle_flows;
   struct ndpi_flow_info *idle_flows[IDLE_SCAN_BUDGET];
 };
+// used memory counters
+u_int32_t current_ndpi_memory = 0, max_ndpi_memory = 0;
 
 // array for every thread created for a flow
 static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
@@ -647,3 +649,42 @@ void test_lib() {
     terminateDetection(thread_id);
   }
 }
+
+  int main(int argc, char **argv) {
+    int i;
+
+    
+    
+
+    gettimeofday(&startup_time, NULL);
+    ndpi_info_mod = ndpi_init_detection_module(ndpi_no_prefs);
+
+    if(ndpi_info_mod == NULL) return -1;
+
+    memset(ndpi_thread_info, 0, sizeof(ndpi_thread_info));
+
+    //parseOptions(argc, argv);
+
+    if(!quiet_mode) {
+      printf("\n-----------------------------------------------------------\n"
+	     "* NOTE: This is demo app to show *some* nDPI features.\n"
+	     "* In this demo we have implemented only some basic features\n"
+	     "* just to show you what you can do with the library. Feel \n"
+	     "* free to extend it and send us the patches for inclusion\n"
+	     "------------------------------------------------------------\n\n");
+
+      printf("Using nDPI (%s) [%d thread(s)]\n", ndpi_revision(), num_threads);
+    }
+
+    signal(SIGINT, sigproc);
+    for(i=0; i<num_loops; i++)
+      test_lib();
+
+    if(results_path)  free(results_path);
+    if(results_file)  fclose(results_file);
+    if(extcap_dumper) pcap_dump_close(extcap_dumper);
+    if(ndpi_info_mod) ndpi_exit_detection_module(ndpi_info_mod);
+    if(csv_fp)        fclose(csv_fp);
+
+    return 0;
+  }
