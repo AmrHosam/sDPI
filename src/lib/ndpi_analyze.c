@@ -67,3 +67,34 @@ void ndpi_free_data_analysis(struct ndpi_analyze_struct *d) {
   if(d->values) ndpi_free(d->values);
   ndpi_free(d);
 }
+
+const char* ndpi_data_ratio2str(float ratio) {
+  if(ratio < -0.2) return("Download");
+  else if(ratio > 0.2) return("Upload");
+  else return("Mixed");
+}
+
+/* Compute the average on all values */
+float ndpi_data_average(struct ndpi_analyze_struct *s) {
+  return((s->num_data_entries == 0) ? 0 : ((float)s->sum_total / (float)s->num_data_entries));
+}
+
+/* ********************************************************************************* */
+
+/* Return min/max on all values */
+u_int32_t ndpi_data_min(struct ndpi_analyze_struct *s) { return(s->min_val); }
+u_int32_t ndpi_data_max(struct ndpi_analyze_struct *s) { return(s->max_val); }
+
+/* ********************************************************************************* */
+
+/* Compute the variance on all values */
+float ndpi_data_variance(struct ndpi_analyze_struct *s) {
+  return(s->num_data_entries ? (s->stddev.q / s->num_data_entries) : 0);
+}
+
+/* ********************************************************************************* */
+
+/* Compute the standard deviation on all values */
+float ndpi_data_stddev(struct ndpi_analyze_struct *s) {
+  return(sqrt(ndpi_data_variance(s)));
+}

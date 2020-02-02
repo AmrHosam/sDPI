@@ -1610,3 +1610,102 @@ struct ndpi_workflow *ndpi_workflow_init(const struct ndpi_workflow_prefs *prefs
 
   return workflow;
 }
+
+/* ***************************************************** */
+
+static int payload_stats_sort_asc(void *_a, void *_b) {
+  struct payload_stats *a = (struct payload_stats *)_a;
+  struct payload_stats *b = (struct payload_stats *)_b;
+
+  //return(a->num_occurrencies - b->num_occurrencies);
+  return(b->num_occurrencies - a->num_occurrencies);
+}
+
+/* ***************************************************** */
+
+void print_payload_stat(struct payload_stats *p) {
+  u_int i;
+  struct flow_id_stats *s, *tmp;
+  struct packet_id_stats *s1, *tmp1;
+
+  printf("\t[");
+
+  for(i=0; i<p->pattern_len; i++) {
+    printf("%c", isprint(p->pattern[i]) ? p->pattern[i] : '.');
+  }
+
+  printf("]");
+  for(; i<16; i++) printf(" ");
+  printf("[");
+
+  for(i=0; i<p->pattern_len; i++) {
+    printf("%s%02X", (i > 0) ? " " : "", isprint(p->pattern[i]) ? p->pattern[i] : '.');
+  }
+
+  printf("]");
+
+  for(; i<16; i++) printf("  ");
+  for(i=p->pattern_len; i<max_pattern_len; i++) printf(" ");
+
+  printf("[len: %u][num_occurrencies: %u][flowId: ",
+	 p->pattern_len, p->num_occurrencies);
+
+  i = 0;
+  HASH_ITER(hh, p->flows, s, tmp) {
+    printf("%s%u", (i > 0) ? " " : "", s->flow_id);
+    i++;
+  }
+
+  printf("][packetIds: ");
+
+
+  i = 0;
+  HASH_ITER(hh, p->packets, s1, tmp1) {
+    printf("%s%u", (i > 0) ? " " : "", s1->packet_id);
+    i++;
+  }
+
+  printf("]\n");
+
+
+}
+
+/* ***************************************************** */
+
+void ndpi_report_payload_stats() {
+  struct payload_stats *p, *tmp;
+  u_int num = 0;
+
+  printf("\n\nPayload Analysis\n");
+
+  HASH_SORT(pstats, payload_stats_sort_asc);
+
+  HASH_ITER(hh, pstats, p, tmp) {
+    if(num <= max_num_reported_top_payloads)
+      print_payload_stat(p);
+
+    free(p->pattern);
+
+    {
+      struct flow_id_stats *p1, *tmp1;
+
+      HASH_ITER(hh, p->flows, p1, tmp1) {
+	HASH_DEL(p->flows, p1);
+	free(p1);
+      }
+    }
+
+    {
+      struct packet_id_stats *p1, *tmp1;
+
+      HASH_ITER(hh, p->packets, p1, tmp1) {
+	HASH_DEL(p->packets, p1);
+	free(p1);
+      }
+    }
+
+    HASH_DEL(pstats, p);
+    free(p);
+    num++;
+  }
+}

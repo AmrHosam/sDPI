@@ -3162,7 +3162,97 @@ char* ndpi_protocol2name(struct ndpi_detection_module_struct *ndpi_str,
 
 /* ****************************************************** */
 
+const char* ndpi_category_get_name(struct ndpi_detection_module_struct *ndpi_str,
+				   ndpi_protocol_category_t category) {
+  if((!ndpi_str) || (category >= NDPI_PROTOCOL_NUM_CATEGORIES)) {
+    static char b[24];
 
+    if(!ndpi_str)
+      snprintf(b, sizeof(b), "NULL nDPI");
+    else
+      snprintf(b, sizeof(b), "Invalid category %d", (int)category);
+    return(b);
+  }
+
+  if((category >= NDPI_PROTOCOL_CATEGORY_CUSTOM_1) && (category <= NDPI_PROTOCOL_CATEGORY_CUSTOM_5)) {
+    switch(category) {
+    case NDPI_PROTOCOL_CATEGORY_CUSTOM_1:
+      return(ndpi_str->custom_category_labels[0]);
+    case NDPI_PROTOCOL_CATEGORY_CUSTOM_2:
+      return(ndpi_str->custom_category_labels[1]);
+    case NDPI_PROTOCOL_CATEGORY_CUSTOM_3:
+      return(ndpi_str->custom_category_labels[2]);
+    case NDPI_PROTOCOL_CATEGORY_CUSTOM_4:
+      return(ndpi_str->custom_category_labels[3]);
+    case NDPI_PROTOCOL_CATEGORY_CUSTOM_5:
+      return(ndpi_str->custom_category_labels[4]);
+    case NDPI_PROTOCOL_NUM_CATEGORIES:
+      return("Code should not use this internal constant");
+    default:
+      return("Unspecified");
+    }
+  } else
+    return(categories[category]);
+}
+
+/* ****************************************************** */
+
+char* ndpi_protocol2id(struct ndpi_detection_module_struct *ndpi_str,
+		       ndpi_protocol proto, char *buf, u_int buf_len) {
+  if((proto.master_protocol != NDPI_PROTOCOL_UNKNOWN)
+     && (proto.master_protocol != proto.app_protocol)) {
+    if(proto.app_protocol != NDPI_PROTOCOL_UNKNOWN)
+      snprintf(buf, buf_len, "%u.%u",
+	       proto.master_protocol, proto.app_protocol);
+    else
+      snprintf(buf, buf_len, "%u", proto.master_protocol);
+  } else
+    snprintf(buf, buf_len, "%u", proto.app_protocol);
+
+  return(buf);
+}
+
+/* ****************************************************** */
+
+ndpi_protocol_breed_t ndpi_get_proto_breed(struct ndpi_detection_module_struct *ndpi_str,
+					   u_int16_t proto_id) {
+  if((proto_id >= ndpi_str->ndpi_num_supported_protocols)
+     || (proto_id >= (NDPI_MAX_SUPPORTED_PROTOCOLS+NDPI_MAX_NUM_CUSTOM_PROTOCOLS))
+     || (ndpi_str->proto_defaults[proto_id].protoName == NULL))
+    proto_id = NDPI_PROTOCOL_UNKNOWN;
+
+  return(ndpi_str->proto_defaults[proto_id].protoBreed);
+}
+
+/* ****************************************************** */
+
+char* ndpi_get_proto_breed_name(struct ndpi_detection_module_struct *ndpi_str, ndpi_protocol_breed_t breed_id) 
+{
+  switch(breed_id) {
+  case NDPI_PROTOCOL_SAFE:
+    return("Safe");
+    break;
+  case NDPI_PROTOCOL_ACCEPTABLE:
+    return("Acceptable");
+    break;
+  case NDPI_PROTOCOL_FUN:
+    return("Fun");
+    break;
+  case NDPI_PROTOCOL_UNSAFE:
+    return("Unsafe");
+    break;
+  case NDPI_PROTOCOL_POTENTIALLY_DANGEROUS:
+    return("Potentially Dangerous");
+    break;
+  case NDPI_PROTOCOL_DANGEROUS:
+    return("Dangerous");
+    break;
+  case NDPI_PROTOCOL_UNRATED:
+  default:
+    return("Unrated");
+    break;
+  }
+}
 int main(void)
 {
 	puts("!!!Hello World!!!"); /* prints !!!Hello World!!! */
