@@ -493,6 +493,7 @@ pcap_loop:
 
   return NULL;
 }
+/* *********************************************** */
 
 /**
  * @brief End of detection and free flow
@@ -500,8 +501,88 @@ pcap_loop:
 static void terminateDetection(u_int16_t thread_id) {
   ndpi_workflow_free(ndpi_thread_info[thread_id].workflow);
 }
-void test_lib()
-{
+
+/**
+ * @brief Setup for detection begin
+ */
+static void setupDetection(u_int16_t thread_id, pcap_t * pcap_handle) {
+  NDPI_PROTOCOL_BITMASK all;
+  struct ndpi_workflow_prefs prefs;
+
+  memset(&prefs, 0, sizeof(prefs));
+  prefs.decode_tunnels = decode_tunnels;
+  prefs.num_roots = NUM_ROOTS;
+  prefs.max_ndpi_flows = MAX_NDPI_FLOWS;
+  prefs.quiet_mode = quiet_mode;
+
+  memset(&ndpi_thread_info[thread_id], 0, sizeof(ndpi_thread_info[thread_id]));
+  ndpi_thread_info[thread_id].workflow = ndpi_workflow_init(&prefs, pcap_handle);
+
+  /* Preferences */
+  ndpi_workflow_set_flow_detected_callback(ndpi_thread_info[thread_id].workflow,
+					   on_protocol_discovered,
+					   (void *)(uintptr_t)thread_id);
+
+  // enable all protocols
+  NDPI_BITMASK_SET_ALL(all);
+  ndpi_set_protocol_detection_bitmask2(ndpi_thread_info[thread_id].workflow->ndpi_struct, &all);
+
+  // clear memory for results
+  memset(ndpi_thread_info[thread_id].workflow->stats.protocol_counter, 0,
+	 sizeof(ndpi_thread_info[thread_id].workflow->stats.protocol_counter));
+  memset(ndpi_thread_info[thread_id].workflow->stats.protocol_counter_bytes, 0,
+	 sizeof(ndpi_thread_info[thread_id].workflow->stats.protocol_counter_bytes));
+  memset(ndpi_thread_info[thread_id].workflow->stats.protocol_flows, 0,
+	 sizeof(ndpi_thread_info[thread_id].workflow->stats.protocol_flows));
+
+  if(_protoFilePath != NULL)
+    ndpi_load_protocols_file(ndpi_thread_info[thread_id].workflow->ndpi_struct, _protoFilePath);
+
+  if(_customCategoryFilePath)
+    ndpi_load_categories_file(ndpi_thread_info[thread_id].workflow->ndpi_struct, _customCategoryFilePath);
+
+  ndpi_finalize_initalization(ndpi_thread_info[thread_id].workflow->ndpi_struct);
+}
+int ndpi_load_categories_file(struct ndpi_detection_module_struct *ndpi_str, const char* path) {
+  char buffer[512], *line, *name, *category, *saveptr;
+  FILE *fd;
+  int len;
+
+  fd = fopen(path, "r");
+
+  if(fd == NULL) {
+    NDPI_LOG_ERR(ndpi_str, "Unable to open file %s [%s]\n", path, strerror(errno));
+    return(-1);
+  }
+
+  while(fd) {
+    line = fgets(buffer, sizeof(buffer), fd);
+
+    if(line == NULL)
+      break;
+
+    len = strlen(line);
+
+    if((len <= 1) || (line[0] == '#'))
+      continue;
+
+    line[len-1] = '\0';
+    name = strtok_r(line, "\t", &saveptr);
+
+    if(name) {
+      category = strtok_r(NULL, "\t", &saveptr);
+
+      if(category)
+        ndpi_load_category(ndpi_str, name, (ndpi_protocol_category_t) atoi(category));
+    }
+  }
+
+  fclose(fd);
+  ndpi_enable_loaded_categories(ndpi_str);
+
+  return(0);
+}
+void test_lib() {
   struct timeval end;
   u_int64_t processing_time_usec, setup_time_usec;
   long thread_id;

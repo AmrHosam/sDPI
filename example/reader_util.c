@@ -1366,3 +1366,51 @@ void process_ndpi_collected_info(struct ndpi_workflow * workflow, struct ndpi_fl
     ndpi_free_flow_info_half(flow);
   }
 }
+}
+
+struct ndpi_workflow* ndpi_workflow_init(const struct ndpi_workflow_prefs * prefs,
+					 pcap_t * pcap_handle) {
+  struct ndpi_detection_module_struct * module;
+  struct ndpi_workflow * workflow;
+
+  set_ndpi_malloc(malloc_wrapper), set_ndpi_free(free_wrapper);
+  set_ndpi_flow_malloc(NULL), set_ndpi_flow_free(NULL);
+
+  /* TODO: just needed here to init ndpi malloc wrapper */
+  module = ndpi_init_detection_module(ndpi_no_prefs);
+
+  if(module == NULL) {
+    NDPI_LOG(0, NULL, NDPI_LOG_ERROR, "global structure initialization failed\n");
+    exit(-1);
+  }
+
+  workflow = ndpi_calloc(1, sizeof(struct ndpi_workflow));
+  if(workflow == NULL) {
+    NDPI_LOG(0, NULL, NDPI_LOG_ERROR, "global structure initialization failed\n");
+    ndpi_free(module);
+    exit(-1);
+  }
+
+  workflow->pcap_handle = pcap_handle;
+  workflow->prefs       = *prefs;
+  workflow->ndpi_struct = module;
+
+  ndpi_set_log_level(module, nDPI_LogLevel);
+
+  if(_debug_protocols != NULL && ! _debug_protocols_ok) {
+    if(parse_debug_proto(module,_debug_protocols))
+      exit(-1);
+    _debug_protocols_ok = 1;
+  }
+
+#ifdef NDPI_ENABLE_DEBUG_MESSAGES
+  NDPI_BITMASK_RESET(module->debug_bitmask);
+
+  if(_debug_protocols_ok)
+    module->debug_bitmask = debug_bitmask;
+#endif
+
+  workflow->ndpi_flows_root = ndpi_calloc(workflow->prefs.num_roots, sizeof(void *));
+
+  return workflow;
+}
