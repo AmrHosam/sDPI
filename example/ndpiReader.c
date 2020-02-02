@@ -47,18 +47,14 @@ static char *_protoFilePath         = NULL; /**< Protocol file path  */
 static char *_customCategoryFilePath= NULL; /**< Custom categories file path  */
 static FILE *csv_fp                 = NULL; /**< for CSV export */
 static u_int8_t live_capture = 0;
-static u_int8_t undetected_flows_deleted = 0;
 //
-static u_int8_t shutdown_app = 0, quiet_mode = 0;
 static struct timeval startup_time, begin, end;
-static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
 static pcap_dumper_t *extcap_dumper = NULL;
 static char extcap_buf[16384];
 static char *extcap_capture_fifo    = NULL;
 static u_int16_t extcap_packet_filter = (u_int16_t)-1;
 static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
 static u_int8_t undetected_flows_deleted = 0;
-static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
 /** User preferences **/
 u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
 u_int8_t verbose = 0, enable_joy_stats = 0;
@@ -75,10 +71,7 @@ static struct timeval startup_time, begin, end;
 #ifdef linux
 static int core_affinity[MAX_NUM_READER_THREADS];
 #endif
-static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
 /** Detection parameters **/
-static time_t capture_for = 0;
-static time_t capture_until = 0;
 static u_int32_t num_flows;
 static struct ndpi_detection_module_struct *ndpi_info_mod = NULL;
 
@@ -102,8 +95,6 @@ u_int8_t verbose = 0, enable_joy_stats = 0;
 /* Detection parameters */
 static time_t capture_for = 0;
 static time_t capture_until = 0;
-static u_int8_t live_capture = 0;
-static u_int8_t num_threads = 1;
 
 /**
  * @brief Force a pcap_dispatch() or pcap_loop() call to return
@@ -591,45 +582,7 @@ static void setupDetection(u_int16_t thread_id, pcap_t * pcap_handle) {
 
   ndpi_finalize_initalization(ndpi_thread_info[thread_id].workflow->ndpi_struct);
 }
-int ndpi_load_categories_file(struct ndpi_detection_module_struct *ndpi_str, const char* path) {
-  char buffer[512], *line, *name, *category, *saveptr;
-  FILE *fd;
-  int len;
 
-  fd = fopen(path, "r");
-
-  if(fd == NULL) {
-    NDPI_LOG_ERR(ndpi_str, "Unable to open file %s [%s]\n", path, strerror(errno));
-    return(-1);
-  }
-
-  while(fd) {
-    line = fgets(buffer, sizeof(buffer), fd);
-
-    if(line == NULL)
-      break;
-
-    len = strlen(line);
-
-    if((len <= 1) || (line[0] == '#'))
-      continue;
-
-    line[len-1] = '\0';
-    name = strtok_r(line, "\t", &saveptr);
-
-    if(name) {
-      category = strtok_r(NULL, "\t", &saveptr);
-
-      if(category)
-        ndpi_load_category(ndpi_str, name, (ndpi_protocol_category_t) atoi(category));
-    }
-  }
-
-  fclose(fd);
-  ndpi_enable_loaded_categories(ndpi_str);
-
-  return(0);
-}
 void test_lib() {
   struct timeval end;
   u_int64_t processing_time_usec, setup_time_usec;
