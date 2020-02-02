@@ -45,7 +45,7 @@ typedef char AC_ALPHABET_t;
 typedef struct {
   int number;
   unsigned int category, breed;
-} AC_REP_t;
+}  AC_REP_t;
 
 /* AC_PATTERN_t:
  * This is the pattern type that must be fed into AC automata.
