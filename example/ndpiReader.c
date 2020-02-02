@@ -88,10 +88,7 @@ struct reader_thread {
 
 // array for every thread created for a flow
 static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
-
-/** User preferences **/
-u_int8_t verbose = 0, enable_joy_stats = 0;
-
+  
 /* Detection parameters */
 static time_t capture_for = 0;
 static time_t capture_until = 0;
