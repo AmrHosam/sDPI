@@ -61,3 +61,9 @@ void ndpi_data_add_value(struct ndpi_analyze_struct *s, const u_int32_t value)
   s->stddev.mu = ((s->stddev.mu * (s->num_data_entries - 1)) + value) / s->num_data_entries;
   s->stddev.q = s->stddev.q + (value - tmp_mu)*(value - s->stddev.mu);    
 }
+/* ********************************************************************************* */
+
+void ndpi_free_data_analysis(struct ndpi_analyze_struct *d) {
+  if(d->values) ndpi_free(d->values);
+  ndpi_free(d);
+}
