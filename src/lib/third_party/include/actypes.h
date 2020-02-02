@@ -1,3 +1,7 @@
+
+
+
+
 /*
  * actypes.h: Includes basic data types of ahocorasick library
  * This file is part of multifast.
