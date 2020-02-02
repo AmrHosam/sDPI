@@ -36,9 +36,19 @@
 #include <libgen.h>
 
 #include "reader_util.h"
-/*client paramters*/
+/** Client parameters **/
+
 static char *_pcap_file[MAX_NUM_READER_THREADS]; /**< Ingress pcap file/interfaces */
+static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
+static FILE *results_file           = NULL;
+static char *results_path           = NULL;
 static char * bpfFilter             = NULL; /**< bpf filter  */
+static char *_protoFilePath         = NULL; /**< Protocol file path  */
+static char *_customCategoryFilePath= NULL; /**< Custom categories file path  */
+static FILE *csv_fp                 = NULL; /**< for CSV export */
+static u_int8_t live_capture = 0;
+static u_int8_t undetected_flows_deleted = 0;
+//
 static u_int8_t shutdown_app = 0, quiet_mode = 0;
 static struct timeval startup_time, begin, end;
 static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
@@ -51,7 +61,29 @@ static u_int8_t undetected_flows_deleted = 0;
 static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
 /** User preferences **/
 u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
-// struct associated to a workflow for a thread
+u_int8_t verbose = 0, enable_joy_stats = 0;
+int nDPI_LogLevel = 0;
+char *_debug_protocols = NULL;
+u_int8_t human_readeable_string_len = 5;
+u_int8_t max_num_udp_dissected_pkts = 16 /* 8 is enough for most protocols, Signal requires more */, max_num_tcp_dissected_pkts = 80 /* due to telnet */;
+static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
+static u_int16_t decode_tunnels = 0;
+static u_int16_t num_loops = 1;
+static u_int8_t shutdown_app = 0, quiet_mode = 0;
+static u_int8_t num_threads = 1;
+static struct timeval startup_time, begin, end;
+#ifdef linux
+static int core_affinity[MAX_NUM_READER_THREADS];
+#endif
+static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
+/** Detection parameters **/
+static time_t capture_for = 0;
+static time_t capture_until = 0;
+static u_int32_t num_flows;
+static struct ndpi_detection_module_struct *ndpi_info_mod = NULL;
+
+extern u_int32_t max_num_packets_per_flow, max_packet_payload_dissection, max_num_reported_top_payloads;
+extern u_int16_t min_pattern_len, max_pattern_len;// struct associated to a workflow for a thread
 struct reader_thread {
   struct ndpi_workflow *workflow;
   pthread_t pthread;
@@ -393,7 +425,7 @@ static void ndpi_process_packet(u_char *args, const struct pcap_pkthdr *header, 
     processing_time_usec = end.tv_sec*1000000 + end.tv_usec - (begin.tv_sec*1000000 + begin.tv_usec);
     setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
 
-    printResults(processing_time_usec, setup_time_usec);
+    //printResults(processing_time_usec, setup_time_usec);
 
     for(i=0; i<ndpi_thread_info[thread_id].workflow->prefs.num_roots; i++) {
       ndpi_tdestroy(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i], ndpi_flow_info_freer);
@@ -493,6 +525,18 @@ pcap_loop:
 
   return NULL;
 }
+/* *********************************************** */
+
+/**
+ * @brief On Protocol Discover - demo callback
+ */
+static void on_protocol_discovered(struct ndpi_workflow * workflow,
+				   struct ndpi_flow_info * flow,
+				   void * udata) {
+  ;
+}
+
+/* *********************************************** */
 /* *********************************************** */
 
 /**
@@ -639,7 +683,7 @@ void test_lib() {
   setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
 
   /* Printing cumulative results */
-  printResults(processing_time_usec, setup_time_usec);
+  //printResults(processing_time_usec, setup_time_usec);
 
   for(thread_id = 0; thread_id < num_threads; thread_id++)
   {
