@@ -38,6 +38,69 @@
 #include "reader_util.h"
 
 
+/* ***************************************************************************************************************************** */
+/** Client parameters **/
+
+static char *_pcap_file[MAX_NUM_READER_THREADS]; /**< Ingress pcap file/interfaces */
+static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
+static FILE *results_file           = NULL;
+static char *results_path           = NULL;
+static char * bpfFilter             = NULL; /**< bpf filter  */
+static char *_protoFilePath         = NULL; /**< Protocol file path  */
+static char *_customCategoryFilePath= NULL; /**< Custom categories file path  */
+static FILE *csv_fp                 = NULL; /**< for CSV export */
+static u_int8_t live_capture = 0;
+//
+static struct timeval startup_time, begin, end;
+static pcap_dumper_t *extcap_dumper = NULL;
+static char extcap_buf[16384];
+static char *extcap_capture_fifo    = NULL;
+static u_int16_t extcap_packet_filter = (u_int16_t)-1;
+static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
+static u_int8_t undetected_flows_deleted = 0;
+/** User preferences **/
+u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
+u_int8_t verbose = 0, enable_joy_stats = 0;
+int nDPI_LogLevel = 0;
+char *_debug_protocols = NULL;
+u_int8_t human_readeable_string_len = 5;
+u_int8_t max_num_udp_dissected_pkts = 16 /* 8 is enough for most protocols, Signal requires more */, max_num_tcp_dissected_pkts = 80 /* due to telnet */;
+static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
+static u_int16_t decode_tunnels = 0;
+static u_int16_t num_loops = 1;
+static u_int8_t shutdown_app = 0, quiet_mode = 0;
+static u_int8_t num_threads = 1;
+static struct timeval startup_time, begin, end;
+#ifdef linux
+static int core_affinity[MAX_NUM_READER_THREADS];
+#endif
+/** Detection parameters **/
+static u_int32_t num_flows;
+static struct ndpi_detection_module_struct *ndpi_info_mod = NULL;
+
+extern u_int32_t max_num_packets_per_flow, max_packet_payload_dissection, max_num_reported_top_payloads;
+extern u_int16_t min_pattern_len, max_pattern_len;// struct associated to a workflow for a thread
+struct reader_thread {
+  struct ndpi_workflow *workflow;
+  pthread_t pthread;
+  u_int64_t last_idle_scan_time;
+  u_int32_t idle_scan_idx;
+  u_int32_t num_idle_flows;
+  struct ndpi_flow_info *idle_flows[IDLE_SCAN_BUDGET];
+};
+// used memory counters
+u_int32_t current_ndpi_memory = 0, max_ndpi_memory = 0;
+
+// array for every thread created for a flow
+static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
+  
+/* Detection parameters */
+static time_t capture_for = 0;
+static time_t capture_until = 0;
+struct flow_info {
+  struct ndpi_flow_info *flow;
+  u_int16_t thread_id;
+};
 /********/
 static struct option longopts[] = {
   /* mandatory extcap options */
@@ -105,6 +168,123 @@ void printCSVHeader() {
 }
 
 /* **********************************************************parseopations************************************************* */
+/* ********************************** */
+/* ********************************** */
+
+void extcap_interfaces() {
+  printf("extcap {version=%s}\n", ndpi_revision());
+  printf("interface {value=ndpi}{display=nDPI interface}\n");
+  exit(0);
+}
+
+/* ********************************** */
+
+void extcap_dlts() {
+  u_int dlts_number = DLT_EN10MB;
+  printf("dlt {number=%u}{name=%s}{display=%s}\n", dlts_number, "ndpi", "nDPI Interface");
+  exit(0);
+}
+
+/* ********************************** */
+
+struct ndpi_proto_sorter {
+  int id;
+  char name[16];
+};
+
+/* ********************************** */
+
+int cmpProto(const void *_a, const void *_b) {
+  struct ndpi_proto_sorter *a = (struct ndpi_proto_sorter*)_a;
+  struct ndpi_proto_sorter *b = (struct ndpi_proto_sorter*)_b;
+
+  return(strcmp(a->name, b->name));
+}
+
+/* ********************************** */
+
+int cmpFlows(const void *_a, const void *_b) {
+  struct ndpi_flow_info *fa = ((struct flow_info*)_a)->flow;
+  struct ndpi_flow_info *fb = ((struct flow_info*)_b)->flow;
+  uint64_t a_size = fa->src2dst_bytes + fa->dst2src_bytes;
+  uint64_t b_size = fb->src2dst_bytes + fb->dst2src_bytes;
+  if(a_size != b_size)
+    return a_size < b_size ? 1 : -1;
+
+// copy from ndpi_workflow_node_cmp();
+
+  if(fa->ip_version < fb->ip_version ) return(-1); else { if(fa->ip_version > fb->ip_version ) return(1); }
+  if(fa->protocol   < fb->protocol   ) return(-1); else { if(fa->protocol   > fb->protocol   ) return(1); }
+  if(htonl(fa->src_ip)   < htonl(fb->src_ip)  ) return(-1); else { if(htonl(fa->src_ip)   > htonl(fb->src_ip)  ) return(1); }
+  if(htons(fa->src_port) < htons(fb->src_port)) return(-1); else { if(htons(fa->src_port) > htons(fb->src_port)) return(1); }
+  if(htonl(fa->dst_ip)   < htonl(fb->dst_ip)  ) return(-1); else { if(htonl(fa->dst_ip)   > htonl(fb->dst_ip)  ) return(1); }
+  if(htons(fa->dst_port) < htons(fb->dst_port)) return(-1); else { if(htons(fa->dst_port) > htons(fb->dst_port)) return(1); }
+  return(0);
+}
+
+void extcap_config() {
+  int i, argidx = 0;
+  struct ndpi_proto_sorter *protos;
+  u_int ndpi_num_supported_protocols = ndpi_get_ndpi_num_supported_protocols(ndpi_info_mod);
+  ndpi_proto_defaults_t *proto_defaults = ndpi_get_proto_defaults(ndpi_info_mod);
+
+  /* -i <interface> */
+  printf("arg {number=%d}{call=-i}{display=Capture Interface}{type=string}"
+	 "{tooltip=The interface name}\n", argidx++);
+  printf("arg {number=%d}{call=-i}{display=Pcap File to Analyze}{type=fileselect}"
+	 "{tooltip=The pcap file to analyze (if the interface is unspecified)}\n", argidx++);
+
+  protos = (struct ndpi_proto_sorter*)malloc(sizeof(struct ndpi_proto_sorter) * ndpi_num_supported_protocols);
+  if(!protos) exit(0);
+
+  for(i=0; i<(int) ndpi_num_supported_protocols; i++) {
+    protos[i].id = i;
+    snprintf(protos[i].name, sizeof(protos[i].name), "%s", proto_defaults[i].protoName);
+  }
+
+  qsort(protos, ndpi_num_supported_protocols, sizeof(struct ndpi_proto_sorter), cmpProto);
+
+  printf("arg {number=%d}{call=-9}{display=nDPI Protocol Filter}{type=selector}"
+	 "{tooltip=nDPI Protocol to be filtered}\n", argidx);
+
+  printf("value {arg=%d}{value=%d}{display=%s}\n", argidx, -1, "All Protocols (no nDPI filtering)");
+
+  for(i=0; i<(int)ndpi_num_supported_protocols; i++)
+    printf("value {arg=%d}{value=%d}{display=%s (%d)}\n", argidx, protos[i].id,
+	   protos[i].name, protos[i].id);
+
+  free(protos);
+
+  exit(0);
+}
+
+/* ********************************** */
+
+void extcap_capture() {
+#ifdef DEBUG_TRACE
+  if(trace) fprintf(trace, " #### %s #### \n", __FUNCTION__);
+#endif
+
+  if((extcap_dumper = pcap_dump_open(pcap_open_dead(DLT_EN10MB, 16384 /* MTU */),
+				     extcap_capture_fifo)) == NULL) {
+    fprintf(stderr, "Unable to open the pcap dumper on %s", extcap_capture_fifo);
+
+#ifdef DEBUG_TRACE
+    if(trace) fprintf(trace, "Unable to open the pcap dumper on %s\n",
+		      extcap_capture_fifo);
+#endif
+    return;
+  }
+
+#ifdef DEBUG_TRACE
+  if(trace) fprintf(trace, "Starting packet capture [%p]\n", extcap_dumper);
+#endif
+}
+
+/* ********************************** */
+
+
+
 
 static void parseOptions(int argc, char **argv) {
   int option_idx = 0, do_capture = 0;
@@ -213,7 +393,7 @@ static void parseOptions(int argc, char **argv) {
       }
       break;
 
-    case 'h':
+     case 'h':
       help(1);
       break;
 
@@ -352,80 +532,6 @@ static void parseOptions(int argc, char **argv) {
   if(trace) fclose(trace);
 #endif
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* ***************************************************************************************************************************** */
-/** Client parameters **/
-
-static char *_pcap_file[MAX_NUM_READER_THREADS]; /**< Ingress pcap file/interfaces */
-static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
-static FILE *results_file           = NULL;
-static char *results_path           = NULL;
-static char * bpfFilter             = NULL; /**< bpf filter  */
-static char *_protoFilePath         = NULL; /**< Protocol file path  */
-static char *_customCategoryFilePath= NULL; /**< Custom categories file path  */
-static FILE *csv_fp                 = NULL; /**< for CSV export */
-static u_int8_t live_capture = 0;
-//
-static struct timeval startup_time, begin, end;
-static pcap_dumper_t *extcap_dumper = NULL;
-static char extcap_buf[16384];
-static char *extcap_capture_fifo    = NULL;
-static u_int16_t extcap_packet_filter = (u_int16_t)-1;
-static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
-static u_int8_t undetected_flows_deleted = 0;
-/** User preferences **/
-u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
-u_int8_t verbose = 0, enable_joy_stats = 0;
-int nDPI_LogLevel = 0;
-char *_debug_protocols = NULL;
-u_int8_t human_readeable_string_len = 5;
-u_int8_t max_num_udp_dissected_pkts = 16 /* 8 is enough for most protocols, Signal requires more */, max_num_tcp_dissected_pkts = 80 /* due to telnet */;
-static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
-static u_int16_t decode_tunnels = 0;
-static u_int16_t num_loops = 1;
-static u_int8_t shutdown_app = 0, quiet_mode = 0;
-static u_int8_t num_threads = 1;
-static struct timeval startup_time, begin, end;
-#ifdef linux
-static int core_affinity[MAX_NUM_READER_THREADS];
-#endif
-/** Detection parameters **/
-static u_int32_t num_flows;
-static struct ndpi_detection_module_struct *ndpi_info_mod = NULL;
-
-extern u_int32_t max_num_packets_per_flow, max_packet_payload_dissection, max_num_reported_top_payloads;
-extern u_int16_t min_pattern_len, max_pattern_len;// struct associated to a workflow for a thread
-struct reader_thread {
-  struct ndpi_workflow *workflow;
-  pthread_t pthread;
-  u_int64_t last_idle_scan_time;
-  u_int32_t idle_scan_idx;
-  u_int32_t num_idle_flows;
-  struct ndpi_flow_info *idle_flows[IDLE_SCAN_BUDGET];
-};
-// used memory counters
-u_int32_t current_ndpi_memory = 0, max_ndpi_memory = 0;
-
-// array for every thread created for a flow
-static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
-
-static time_t capture_for = 0;
-static time_t capture_until = 0;
 
 typedef struct node_a{
   u_int32_t addr;
