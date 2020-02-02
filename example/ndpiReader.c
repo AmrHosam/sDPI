@@ -88,10 +88,77 @@ struct reader_thread {
 
 // array for every thread created for a flow
 static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
-  
-/* Detection parameters */
+
 static time_t capture_for = 0;
 static time_t capture_until = 0;
+
+typedef struct node_a{
+  u_int32_t addr;
+  u_int8_t version; /* IP version */
+  char proto[16]; /*app level protocol*/
+  int count;
+  struct node_a *left, *right;
+}addr_node;
+
+struct info_pair {
+  u_int32_t addr;
+  u_int8_t version; /* IP version */
+  char proto[16]; /*app level protocol*/
+  int count;
+};
+
+struct port_stats {
+  u_int32_t port; /* we'll use this field as the key */
+  u_int32_t num_pkts, num_bytes;
+  u_int32_t num_flows;
+  u_int32_t num_addr; /*number of distinct IP addresses */
+  u_int32_t cumulative_addr; /*cumulative some of IP addresses */
+  addr_node *addr_tree; /* tree of distinct IP addresses */
+  struct info_pair top_ip_addrs[MAX_NUM_IP_ADDRESS];
+  u_int8_t hasTopHost; /* as boolean flag */
+  u_int32_t top_host;  /* host that is contributed to > 95% of traffic */
+  u_int8_t version;    /* top host's ip version */
+  char proto[16];      /* application level protocol of top host */
+  UT_hash_handle hh;   /* makes this structure hashable */
+};
+
+
+struct port_stats *srcStats = NULL, *dstStats = NULL;
+
+// struct to hold count of flows received by destination ports
+struct port_flow_info {
+  u_int32_t port; /* key */
+  u_int32_t num_flows;
+  UT_hash_handle hh;
+};
+
+// struct to hold single packet tcp flows sent by source ip address
+struct single_flow_info {
+  u_int32_t saddr; /* key */
+  u_int8_t version; /* IP version */
+  struct port_flow_info *ports;
+  u_int32_t tot_flows;
+  UT_hash_handle hh;
+};
+
+struct single_flow_info *scannerHosts = NULL;
+
+// struct to hold top receiver hosts
+struct receiver {
+  u_int32_t addr; /* key */
+  u_int8_t version; /* IP version */
+  u_int32_t num_pkts;
+  UT_hash_handle hh;
+};
+
+struct receiver *receivers = NULL, *topReceivers = NULL;
+
+
+struct ndpi_packet_trailer {
+  u_int32_t magic; /* 0x19682017 */
+  u_int16_t master_protocol /* e.g. HTTP */, app_protocol /* e.g. FaceBook */;
+  char name[16];
+};
 
 /**
  * @brief Force a pcap_dispatch() or pcap_loop() call to return
@@ -272,7 +339,8 @@ static pcap_t * openPcapFileOrDevice(u_int16_t thread_id, const u_char * pcap_fi
 static void node_proto_guess_walker(const void *node, ndpi_VISIT which, int depth, void *user_data)
 {
   struct ndpi_flow_info *flow = *(struct ndpi_flow_info **) node;
-  u_int16_t thread_id = *((u_int16_t *) user_data), proto;
+  u_int16_t thread_id = *((u_int16_t *) user_data);
+  u_int16_t proto;
 
   if((which == ndpi_preorder) || (which == ndpi_leaf)) { /* Avoid walking the same node multiple times */
     if((!flow->detection_completed) && flow->ndpi_flow) {
@@ -578,6 +646,242 @@ static void setupDetection(u_int16_t thread_id, pcap_t * pcap_handle) {
     ndpi_load_categories_file(ndpi_thread_info[thread_id].workflow->ndpi_struct, _customCategoryFilePath);
 
   ndpi_finalize_initalization(ndpi_thread_info[thread_id].workflow->ndpi_struct);
+}
+
+
+/* ********************************** */
+
+/**
+ * @brief From IPPROTO to string NAME
+ */
+static char* ipProto2Name(u_int16_t proto_id) {
+  static char proto[8];
+
+  switch(proto_id) {
+  case IPPROTO_TCP:
+    return("TCP");
+    break;
+  case IPPROTO_UDP:
+    return("UDP");
+    break;
+  case IPPROTO_ICMP:
+    return("ICMP");
+    break;
+  case IPPROTO_ICMPV6:
+    return("ICMPV6");
+    break;
+  case 112:
+    return("VRRP");
+    break;
+  case IPPROTO_IGMP:
+    return("IGMP");
+    break;
+  }
+
+  snprintf(proto, sizeof(proto), "%u", proto_id);
+  return(proto);
+}
+
+/* ********************************** */
+
+
+/* *********************************************** */
+
+void updateScanners(struct single_flow_info **scanners, u_int32_t saddr,
+                    u_int8_t version, u_int32_t dport) {
+  struct single_flow_info *f;
+  struct port_flow_info *p;
+
+  HASH_FIND_INT(*scanners, (int *)&saddr, f);
+
+  if(f == NULL) {
+    f = (struct single_flow_info*)malloc(sizeof(struct single_flow_info));
+    if(!f) return;
+    f->saddr = saddr;
+    f->version = version;
+    f->tot_flows = 1;
+    f->ports = NULL;
+
+    p = (struct port_flow_info*)malloc(sizeof(struct port_flow_info));
+
+    if(!p) {
+      free(f);
+      return;
+    } else
+      p->port = dport, p->num_flows = 1;
+
+    HASH_ADD_INT(f->ports, port, p);
+    HASH_ADD_INT(*scanners, saddr, f);
+  } else{
+    struct port_flow_info *pp;
+    f->tot_flows++;
+
+    HASH_FIND_INT(f->ports, (int *)&dport, pp);
+
+    if(pp == NULL) {
+      pp = (struct port_flow_info*)malloc(sizeof(struct port_flow_info));
+      if(!pp) return;
+      pp->port = dport, pp->num_flows = 1;
+
+      HASH_ADD_INT(f->ports, port, pp);
+    } else
+      pp->num_flows++;
+  }
+}
+/* *************************************************************** */
+static void updateReceivers(struct receiver **receivers, u_int32_t dst_addr,
+                            u_int8_t version, u_int32_t num_pkts,
+                            struct receiver **topReceivers) {
+  struct receiver *r;
+  u_int32_t size;
+  int a;
+
+  HASH_FIND_INT(*receivers, (int *)&dst_addr, r);
+  if(r == NULL) {
+    if(((size = HASH_COUNT(*receivers)) < MAX_TABLE_SIZE_1)
+       || ((a = acceptable(num_pkts)) != 0)){
+      r = (struct receiver *)malloc(sizeof(struct receiver));
+      if(!r) return;
+
+      r->addr = dst_addr;
+      r->version = version;
+      r->num_pkts = num_pkts;
+
+      HASH_ADD_INT(*receivers, addr, r);
+
+      if((size = HASH_COUNT(*receivers)) > MAX_TABLE_SIZE_2){
+
+        HASH_SORT(*receivers, receivers_sort_asc);
+        *receivers = cutBackTo(receivers, size, MAX_TABLE_SIZE_1);
+        mergeTables(receivers, topReceivers);
+
+        if((size = HASH_COUNT(*topReceivers)) > MAX_TABLE_SIZE_1){
+          HASH_SORT(*topReceivers, receivers_sort_asc);
+          *topReceivers = cutBackTo(topReceivers, size, MAX_TABLE_SIZE_1);
+        }
+
+        *receivers = NULL;
+      }
+    }
+  }
+  else
+    r->num_pkts += num_pkts;
+}
+
+
+/* *********************************************** */
+
+static void updatePortStats(struct port_stats **stats, u_int32_t port,
+			    u_int32_t addr, u_int8_t version,
+                            u_int32_t num_pkts, u_int32_t num_bytes,
+                            const char *proto) {
+
+  struct port_stats *s = NULL;
+  int count = 0;
+
+  HASH_FIND_INT(*stats, &port, s);
+  if(s == NULL) {
+    s = (struct port_stats*)calloc(1, sizeof(struct port_stats));
+    if(!s) return;
+
+    s->port = port, s->num_pkts = num_pkts, s->num_bytes = num_bytes;
+    s->num_addr = 1, s->cumulative_addr = 1; s->num_flows = 1;
+
+    updateTopIpAddress(addr, version, proto, 1, s->top_ip_addrs, MAX_NUM_IP_ADDRESS);
+
+    s->addr_tree = (addr_node *) malloc(sizeof(addr_node));
+    if(!s->addr_tree) {
+      free(s);
+      return;
+    }
+
+    s->addr_tree->addr = addr;
+    s->addr_tree->version = version;
+    strncpy(s->addr_tree->proto, proto, sizeof(s->addr_tree->proto));
+    s->addr_tree->count = 1;
+    s->addr_tree->left = NULL;
+    s->addr_tree->right = NULL;
+
+    HASH_ADD_INT(*stats, port, s);
+  }
+  else{
+    count = updateIpTree(addr, version, &(*s).addr_tree, proto);
+
+    if(count == UPDATED_TREE) s->num_addr++;
+
+    if(count) {
+      s->cumulative_addr++;
+      updateTopIpAddress(addr, version, proto, count, s->top_ip_addrs, MAX_NUM_IP_ADDRESS);
+    }
+
+    s->num_pkts += num_pkts, s->num_bytes += num_bytes, s->num_flows++;
+  }
+}
+
+/* *********************************************** */
+
+/**
+ * @brief Ports stats
+ */
+static void port_stats_walker(const void *node, ndpi_VISIT which, int depth, void *user_data) {
+  if((which == ndpi_preorder) || (which == ndpi_leaf)) { /* Avoid walking the same node multiple times */
+    struct ndpi_flow_info *flow = *(struct ndpi_flow_info **) node;
+    u_int16_t thread_id = *(int *)user_data;
+    u_int16_t sport, dport;
+    char proto[16];
+    int r;
+
+    sport = ntohs(flow->src_port), dport = ntohs(flow->dst_port);
+
+    /* get app level protocol */
+    if(flow->detected_protocol.master_protocol)
+      ndpi_protocol2name(ndpi_thread_info[thread_id].workflow->ndpi_struct,
+			 flow->detected_protocol, proto, sizeof(proto));
+    else
+      strncpy(proto, ndpi_get_proto_name(ndpi_thread_info[thread_id].workflow->ndpi_struct,
+					 flow->detected_protocol.app_protocol),sizeof(proto));
+
+    if(((r = strcmp(ipProto2Name(flow->protocol), "TCP")) == 0)
+       && (flow->src2dst_packets == 1) && (flow->dst2src_packets == 0)) {
+      updateScanners(&scannerHosts, flow->src_ip, flow->ip_version, dport);
+    }
+
+    updateReceivers(&receivers, flow->dst_ip, flow->ip_version,
+                    flow->src2dst_packets, &topReceivers);
+
+    updatePortStats(&srcStats, sport, flow->src_ip, flow->ip_version,
+                    flow->src2dst_packets, flow->src2dst_bytes, proto);
+
+    updatePortStats(&dstStats, dport, flow->dst_ip, flow->ip_version,
+                    flow->dst2src_packets, flow->dst2src_bytes, proto);
+  }
+}
+
+/* *********************************************** */
+
+static void printResults(u_int64_t processing_time_usec, u_int64_t setup_time_usec) {
+  u_int32_t i;
+  u_int64_t total_flow_bytes = 0;
+  u_int32_t avg_pkt_size = 0;
+  struct ndpi_stats cumulative_stats;
+  int thread_id;
+  char buf[32];
+  long long unsigned int breed_stats[NUM_BREEDS] = { 0 };
+  memset(&cumulative_stats, 0, sizeof(cumulative_stats));
+
+  for(thread_id = 0; thread_id < num_threads; thread_id++) {
+    if((ndpi_thread_info[thread_id].workflow->stats.total_wire_bytes == 0)
+       && (ndpi_thread_info[thread_id].workflow->stats.raw_packet_count == 0))
+        continue;
+    for(i=0; i<NUM_ROOTS; i++) {
+      ndpi_twalk(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i],
+                  node_proto_guess_walker, &thread_id);
+      if(verbose == 3)
+      ndpi_twalk(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i],
+                 port_stats_walker, &thread_id);
+    }
+  }
+
 }
 
 void test_lib() {
