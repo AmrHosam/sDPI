@@ -77,6 +77,32 @@ static struct option longopts[] = {
 
   {0, 0, 0, 0}
 };
+/* ********************************** */
+
+void printCSVHeader() {
+  if(!csv_fp) return;
+
+  fprintf(csv_fp, "#flow_id,protocol,first_seen,last_seen,duration,src_ip,src_port,dst_ip,dst_port,ndpi_proto_num,ndpi_proto,");
+  fprintf(csv_fp, "src2dst_packets,src2dst_bytes,src2dst_goodput_bytes,dst2src_packets,dst2src_bytes,dst2src_goodput_bytes,");
+  fprintf(csv_fp, "data_ratio,str_data_ratio,src2dst_goodput_ratio,dst2src_goodput_ratio,");
+
+  /* IAT (Inter Arrival Time) */
+  fprintf(csv_fp, "iat_flow_min,iat_flow_avg,iat_flow_max,iat_flow_stddev,");
+  fprintf(csv_fp, "iat_c_to_s_min,iat_c_to_s_avg,iat_c_to_s_max,iat_c_to_s_stddev,");
+  fprintf(csv_fp, "iat_s_to_c_min,iat_s_to_c_avg,iat_s_to_c_max,iat_s_to_c_stddev,");
+
+  /* Packet Length */
+  fprintf(csv_fp, "pktlen_c_to_s_min,pktlen_c_to_s_avg,pktlen_c_to_s_max,pktlen_c_to_s_stddev,");
+  fprintf(csv_fp, "pktlen_s_to_c_min,pktlen_s_to_c_avg,pktlen_s_to_c_max,pktlen_s_to_c_stddev,");
+
+  /* Flow info */
+  fprintf(csv_fp, "client_info,server_info,");
+  fprintf(csv_fp, "tls_version,ja3c,tls_client_unsafe,");
+  fprintf(csv_fp, "ja3s,tls_server_unsafe,");
+  fprintf(csv_fp, "ssh_client_hassh,ssh_server_hassh");
+  fprintf(csv_fp, "\n");
+}
+
 /* **********************************************************parseopations************************************************* */
 
 static void parseOptions(int argc, char **argv) {
@@ -969,7 +995,7 @@ void test_lib() {
 
     memset(ndpi_thread_info, 0, sizeof(ndpi_thread_info));
 
-    //parseOptions(argc, argv);
+    parseOptions(argc, argv);
 
     if(!quiet_mode) {
       printf("\n-----------------------------------------------------------\n"
