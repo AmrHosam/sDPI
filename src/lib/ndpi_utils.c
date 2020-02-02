@@ -269,6 +269,7 @@ static void ndpi_trecurse(ndpi_node *root, void (*action)(const void *, ndpi_VIS
 }
 
 /* Walk the nodes of a tree */
+/*traverse the flows , update flow stats and call detetction_giveup for each uncompleted flow*/
 void ndpi_twalk(const void *vroot, void (*action)(const void *, ndpi_VISIT, int, void *), void *user_data)
 {
   ndpi_node *root = (ndpi_node *)vroot;
