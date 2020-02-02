@@ -17,6 +17,8 @@
 #define NUM_CUSTOM_CATEGORIES 5
 #define NDPI_PROTOCOL_BITMASK ndpi_protocol_bitmask_struct_t
 #define NDPI_MAX_NUM_CUSTOM_PROTOCOLS (NDPI_NUM_BITS - NDPI_LAST_IMPLEMENTED_PROTOCOL)
+static void  (*_ndpi_flow_free)(void *ptr);
+static void  (*_ndpi_free)(void *ptr);
 static int _ndpi_debug_callbacks = 0;
 typedef struct ndpi_default_ports_tree_node
 {
@@ -306,6 +308,428 @@ static void ndpi_init_ptree_ipv4(struct ndpi_detection_module_struct *ndpi_str, 
 			node->value.user_value = host_list[i].value;
 	}
 }
+/***********  recursive ndoi malloc   **************/
+
+void* ndpi_malloc(size_t size) { return(_ndpi_malloc ? _ndpi_malloc(size) : malloc(size)); }
+
+/* ****************************************** */
+
+char * ndpi_strdup(const char *s)
+{
+  int len = strlen(s);
+  char *m = ndpi_malloc(len+1);
+
+  if(m) {
+    memcpy(m, s, len);
+    m[len] = '\0';
+  }
+
+  return(m);
+}
+/* ****************************************************** */
+
+static int ndpi_string_to_automa(struct ndpi_detection_module_struct *ndpi_str,
+				 ndpi_automa *automa,
+				 char *value, u_int16_t protocol_id,
+				 ndpi_protocol_category_t category,
+				 ndpi_protocol_breed_t breed) {
+  AC_PATTERN_t ac_pattern;
+
+  if(protocol_id >= (NDPI_MAX_SUPPORTED_PROTOCOLS+NDPI_MAX_NUM_CUSTOM_PROTOCOLS)) {
+    NDPI_LOG_ERR(ndpi_str, "[NDPI] protoId=%d: INTERNAL ERROR\n", protocol_id);
+    return(-1);
+  }
+
+  if(automa->ac_automa == NULL) return(-2);
+  ac_pattern.astring = value,
+    ac_pattern.rep.number = protocol_id,
+    ac_pattern.rep.category = (u_int16_t)category,
+    ac_pattern.rep.breed = (u_int16_t)breed;
+
+#ifdef MATCH_DEBUG
+  printf("Adding to automa [%s][protocol_id: %u][category: %u][breed: %u]\n",
+	 value, protocol_id, category, breed);
+#endif
+
+  if(value == NULL)
+    ac_pattern.length = 0;
+  else
+    ac_pattern.length = strlen(ac_pattern.astring);
+
+  if(ac_automata_add(((AC_AUTOMATA_t*)automa->ac_automa), &ac_pattern) != ACERR_SUCCESS)
+    return(-2);
+
+  return(0);
+}
+
+/* ******************************************************************** */
+
+/* This function is used to map protocol name and default ports and it MUST
+   be updated whenever a new protocol is added to NDPI.
+
+   Do NOT add web services (NDPI_SERVICE_xxx) here.
+*/
+static void ndpi_init_protocol_defaults(struct ndpi_detection_module_struct *ndpi_str) {
+  ndpi_port_range ports_a[MAX_DEFAULT_PORTS], ports_b[MAX_DEFAULT_PORTS];
+  u_int16_t no_master[2] = { NDPI_PROTOCOL_NO_MASTER_PROTO, NDPI_PROTOCOL_NO_MASTER_PROTO },
+    custom_master[2];
+
+    /* Reset all settings */
+    memset(ndpi_str->proto_defaults, 0, sizeof(ndpi_str->proto_defaults));
+
+    ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_UNRATED, NDPI_PROTOCOL_UNKNOWN,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "Unknown", NDPI_PROTOCOL_CATEGORY_UNSPECIFIED,
+			    ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+    ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_HTTP,
+			    1 /* can_have_a_subprotocol */, no_master,
+			    no_master, "HTTP", NDPI_PROTOCOL_CATEGORY_WEB,
+			    ndpi_build_default_ports(ports_a, 80, 0 /* ntop */, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+    ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_FBZERO,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "FacebookZero", NDPI_PROTOCOL_CATEGORY_SOCIAL_NETWORK,
+			    ndpi_build_default_ports(ports_a, 443, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+    ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_WHATSAPP_CALL,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "WhatsAppCall", NDPI_PROTOCOL_CATEGORY_VOIP,
+			    ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+   ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_WHATSAPP,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "WhatsApp", NDPI_PROTOCOL_CATEGORY_CHAT,
+			    ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+   ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_WHATSAPP_FILES,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "WhatsAppFiles", NDPI_PROTOCOL_CATEGORY_DOWNLOAD_FT,
+			    ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+  ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_TLS,
+			    1 /* can_have_a_subprotocol */, no_master,
+			    no_master, "TLS", NDPI_PROTOCOL_CATEGORY_WEB,
+			    ndpi_build_default_ports(ports_a, 443, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+  ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_MESSENGER,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "Messenger", NDPI_PROTOCOL_CATEGORY_VOIP,
+			    ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+
+ ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_GIT,
+			    0 /* can_have_a_subprotocol */, no_master,
+			    no_master, "Git", NDPI_PROTOCOL_CATEGORY_COLLABORATIVE,
+			    ndpi_build_default_ports(ports_a, 9418, 0, 0, 0, 0),    /* TCP */
+			    ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0));      /* UDP */
+
+ /* ****************************************************** */
+
+/* *********************************************************************************** */
+
+ndpi_port_range * ndpi_build_default_ports(ndpi_port_range *ports,
+					   u_int16_t portA,
+					   u_int16_t portB,
+					   u_int16_t portC,
+					   u_int16_t portD,
+					   u_int16_t portE) {
+  int i = 0;
+
+  ports[i].port_low = portA, ports[i].port_high = portA; i++;
+  ports[i].port_low = portB, ports[i].port_high = portB; i++;
+  ports[i].port_low = portC, ports[i].port_high = portC; i++;
+  ports[i].port_low = portD, ports[i].port_high = portD; i++;
+  ports[i].port_low = portE, ports[i].port_high = portE;
+
+  return(ports);
+}
+    memset(ndpi_str, 0, sizeof(struct ndpi_detection_module_struct));
+
+  #ifdef NDPI_ENABLE_DEBUG_MESSAGES
+    set_ndpi_debug_function(ndpi_str, (ndpi_debug_function_ptr)ndpi_debug_printf);
+  #endif /* NDPI_ENABLE_DEBUG_MESSAGES */
+
+    if((ndpi_str->protocols_ptree = ndpi_New_Patricia(32 /* IPv4 */)) != NULL)
+      ndpi_init_ptree_ipv4(ndpi_str, ndpi_str->protocols_ptree,
+  			 host_protocol_list,
+  			 prefs & ndpi_dont_load_tor_hosts);
+
+    NDPI_BITMASK_RESET(ndpi_str->detection_bitmask);
+  #ifdef NDPI_ENABLE_DEBUG_MESSAGES
+    ndpi_str->user_data = NULL;
+  #endif
+
+    ndpi_str->ticks_per_second = 1000; /* ndpi_str->ticks_per_second */
+    ndpi_str->tcp_max_retransmission_window_size = NDPI_DEFAULT_MAX_TCP_RETRANSMISSION_WINDOW_SIZE;
+    ndpi_str->directconnect_connection_ip_tick_timeout =
+      NDPI_DIRECTCONNECT_CONNECTION_IP_TICK_TIMEOUT * ndpi_str->ticks_per_second;
+
+    ndpi_str->rtsp_connection_timeout = NDPI_RTSP_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->tvants_connection_timeout = NDPI_TVANTS_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->irc_timeout = NDPI_IRC_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->gnutella_timeout = NDPI_GNUTELLA_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+
+    ndpi_str->battlefield_timeout = NDPI_BATTLEFIELD_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+
+    ndpi_str->thunder_timeout = NDPI_THUNDER_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->yahoo_detect_http_connections = NDPI_YAHOO_DETECT_HTTP_CONNECTIONS;
+
+    ndpi_str->yahoo_lan_video_timeout = NDPI_YAHOO_LAN_VIDEO_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->zattoo_connection_timeout = NDPI_ZATTOO_CONNECTION_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->jabber_stun_timeout = NDPI_JABBER_STUN_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->jabber_file_transfer_timeout = NDPI_JABBER_FT_TIMEOUT * ndpi_str->ticks_per_second;
+    ndpi_str->soulseek_connection_ip_tick_timeout = NDPI_SOULSEEK_CONNECTION_IP_TICK_TIMEOUT * ndpi_str->ticks_per_second;
+
+    ndpi_str->ndpi_num_supported_protocols = NDPI_MAX_SUPPORTED_PROTOCOLS;
+    ndpi_str->ndpi_num_custom_protocols = 0;
+
+    ndpi_str->host_automa.ac_automa               = ac_automata_init(ac_match_handler);
+    ndpi_str->content_automa.ac_automa            = ac_automata_init(ac_match_handler);
+    ndpi_str->bigrams_automa.ac_automa            = ac_automata_init(ac_match_handler);
+    ndpi_str->impossible_bigrams_automa.ac_automa = ac_automata_init(ac_match_handler);
+
+    if((sizeof(categories)/sizeof(char*)) != NDPI_PROTOCOL_NUM_CATEGORIES) {
+      NDPI_LOG_ERR(ndpi_str, "[NDPI] invalid categories length: expected %u, got %u\n",
+  		 NDPI_PROTOCOL_NUM_CATEGORIES, (unsigned int)(sizeof(categories)/sizeof(char*)));
+      return(NULL);
+    }
+
+  #ifdef HAVE_HYPERSCAN
+    ndpi_str->custom_categories.num_to_load = 0, ndpi_str->custom_categories.to_load = NULL;
+    ndpi_str->custom_categories.hostnames = NULL;
+  #else
+    ndpi_str->custom_categories.hostnames.ac_automa        = ac_automata_init(ac_match_handler);
+    ndpi_str->custom_categories.hostnames_shadow.ac_automa = ac_automata_init(ac_match_handler);
+  #endif
+
+    ndpi_str->custom_categories.ipAddresses                = ndpi_New_Patricia(32 /* IPv4 */);
+    ndpi_str->custom_categories.ipAddresses_shadow         = ndpi_New_Patricia(32 /* IPv4 */);
+
+    if((ndpi_str->custom_categories.ipAddresses == NULL)
+       || (ndpi_str->custom_categories.ipAddresses_shadow == NULL))
+      return(NULL);
+
+    ndpi_init_protocol_defaults(ndpi_str);
+
+    for(i=0; i<NUM_CUSTOM_CATEGORIES; i++)
+      snprintf(ndpi_str->custom_category_labels[i],
+  	     CUSTOM_CATEGORY_LABEL_LEN, "User custom category %u", (unsigned int)(i+1));
+
+    return(ndpi_str);
+  }
+/* ****************************************************** */
+
+static int ac_match_handler(AC_MATCH_t *m, AC_TEXT_t *txt, AC_REP_t *match) {
+ int min_len = (txt->length < m->patterns->length) ? txt->length : m->patterns->length;
+ char buf[64] = { '\0' };
+ int min_buf_len = (txt->length > 63 /* sizeof(buf)-1 */) ? 63 : txt->length;
+ u_int buf_len = strlen(buf);
+
+ strncpy(buf, txt->astring, min_buf_len);
+ buf[min_buf_len] = '\0';
+
+#ifdef MATCH_DEBUG
+ printf("Searching [to search: %s/%u][pattern: %s/%u] [len: %d][match_num: %u][%s]\n",
+	 buf, (unigned int)txt->length, m->patterns->astring, m->patterns->length, min_len,
+	 m->match_num, m->patterns->astring);
+#endif
+
+ {
+   char *whatfound = strstr(buf, m->patterns->astring);
+
+#ifdef MATCH_DEBUG
+   printf("[NDPI] %s() [searching=%s][pattern=%s][%s][%c]\n",
+	   __FUNCTION__, buf,  m->patterns->astring,
+	   whatfound ? whatfound : "<NULL>",
+	   whatfound[-1]);
+#endif
+
+   /*
+     The patch below allows in case of pattern ws.amazon.com
+     to avoid matching aws.amazon.com whereas a.ws.amazon.com
+     has to match
+   */
+   if(whatfound
+      && (whatfound != buf)
+      && (m->patterns->astring[0] != '.')  /* The searched pattern does not start with . */
+      && strchr(m->patterns->astring, '.') /* The matched pattern has a . (e.g. numeric or sym IPs) */) {
+     if(whatfound[-1] != '.') {
+	return(0);
+     } else {
+	memcpy(match, &m->patterns[0].rep, sizeof(AC_REP_t)); /* Partial match? */
+	return(0); /* Keep searching as probably there is a better match */
+     }
+   }
+ }
+
+ /*
+   Return 1 for stopping to the first match.
+   We might consider searching for the more
+   specific match, paying more cpu cycles.
+ */
+ memcpy(match, &m->patterns[0].rep, sizeof(AC_REP_t));
+
+ if(((buf_len >= min_len) && (strncmp(&buf[buf_len-min_len], m->patterns->astring, min_len) == 0))
+    || (strncmp(buf, m->patterns->astring, min_len) == 0) /* begins with */
+    ) {
+#ifdef MATCH_DEBUG
+   printf("Found match [%s][%s] [len: %d]"
+	   // "[proto_id: %u]"
+	   "\n",
+	   buf, m->patterns->astring, min_len /* , *matching_protocol_id */);
+#endif
+   return(1); /* If the pattern found matches the string at the beginning we stop here */
+ } else {
+#ifdef MATCH_DEBUG
+   printf("NO match found: continue\n");
+#endif
+   return(0); /* 0 to continue searching, !0 to stop */
+ }
+}
+
+  /* ******************************************************************** */
+
+  static void addDefaultPort(struct ndpi_detection_module_struct *ndpi_str,
+  			   ndpi_port_range *range,
+  			   ndpi_proto_defaults_t *def,
+  			   u_int8_t customUserProto,
+  			   ndpi_default_ports_tree_node_t **root,
+  			   const char *_func, int _line) {
+    u_int16_t port;
+
+    for(port=range->port_low; port<=range->port_high; port++) {
+      ndpi_default_ports_tree_node_t *node = (ndpi_default_ports_tree_node_t*)ndpi_malloc(sizeof(ndpi_default_ports_tree_node_t));
+      ndpi_default_ports_tree_node_t *ret;
+
+      if(!node) {
+        NDPI_LOG_ERR(ndpi_str, "%s:%d not enough memory\n", _func, _line);
+        break;
+      }
+
+      node->proto = def, node->default_port = port, node->customUserProto = customUserProto;
+      ret = (ndpi_default_ports_tree_node_t*)ndpi_tsearch(node, (void*)root, ndpi_default_ports_tree_node_t_cmp); /* Add it to the tree */
+
+      if(ret != node) {
+        NDPI_LOG_DBG(ndpi_str, "[NDPI] %s:%d found duplicate for port %u: overwriting it with new value\n",
+  		   _func, _line, port);
+
+        ret->proto = def;
+        ndpi_free(node);
+      }
+    }
+    /* ****************************************************** */
+
+    static int ndpi_add_host_url_subprotocol(struct ndpi_detection_module_struct *ndpi_str,
+    					 char *_value, int protocol_id,
+    					 ndpi_protocol_category_t category,
+    					 ndpi_protocol_breed_t breed) {
+      int rv;
+      char *value = ndpi_strdup(_value);
+
+      if(!value) return(-1);
+
+    #ifdef DEBUG
+      NDPI_LOG_DEBUG2(ndpi_str, "[NDPI] Adding [%s][%d]\n", value, protocol_id);
+    #endif
+
+      rv = ndpi_string_to_automa(ndpi_str,
+    			       &ndpi_str->host_automa,
+    			       value,
+    			       protocol_id,
+    			       category, breed);
+
+      if(rv != 0) ndpi_free(value);
+
+      return(rv);
+    }
+    /* ******************************************************************** */
+
+    static void init_string_based_protocols(struct ndpi_detection_module_struct *ndpi_str) {
+      int i;
+
+    #ifdef HAVE_HYPERSCAN
+      // TODO check return value
+      init_hyperscan(ndpi_str);
+    #endif
+
+      for(i=0; host_match[i].string_to_match != NULL; i++)
+        ndpi_init_protocol_match(ndpi_str, &host_match[i]);
+
+      ndpi_enable_loaded_categories(ndpi_str);
+
+    #ifdef MATCH_DEBUG
+      // ac_automata_display(ndpi_str->host_automa.ac_automa, 'n');
+    #endif
+
+      for(i=0; ndpi_en_bigrams[i] != NULL; i++)
+        ndpi_string_to_automa(ndpi_str, &ndpi_str->bigrams_automa,
+    			  (char*)ndpi_en_bigrams[i],
+    			  1, 1, 1);
+
+      for(i=0; ndpi_en_impossible_bigrams[i] != NULL; i++)
+        ndpi_string_to_automa(ndpi_str, &ndpi_str->impossible_bigrams_automa,
+    			  (char*)ndpi_en_impossible_bigrams[i],
+    			  1, 1, 1);
+    }
+/* ********************************************************************************** */
+
+void ndpi_set_proto_defaults(struct ndpi_detection_module_struct *ndpi_str,
+			     ndpi_protocol_breed_t breed, u_int16_t protoId,
+			     u_int8_t can_have_a_subprotocol,
+			     u_int16_t tcp_master_protoId[2], u_int16_t udp_master_protoId[2],
+			     char *protoName, ndpi_protocol_category_t protoCategory,
+			     ndpi_port_range *tcpDefPorts, ndpi_port_range *udpDefPorts) {
+  char *name;
+  int j;
+
+  if(protoId >= NDPI_MAX_SUPPORTED_PROTOCOLS+NDPI_MAX_NUM_CUSTOM_PROTOCOLS) {
+#ifdef DEBUG
+    NDPI_LOG_ERR(ndpi_str, "[NDPI] %s/protoId=%d: INTERNAL ERROR\n", protoName, protoId);
+#endif
+    return;
+  }
+
+  if(ndpi_str->proto_defaults[protoId].protoName != NULL) {
+#ifdef DEBUG
+    NDPI_LOG_ERR(ndpi_str, "[NDPI] %s/protoId=%d: already initialized. Ignoring it\n", protoName, protoId);
+#endif
+    return;
+  }
+
+  name = ndpi_strdup(protoName);
+
+  if(ndpi_str->proto_defaults[protoId].protoName)
+    ndpi_free(ndpi_str->proto_defaults[protoId].protoName);
+
+  ndpi_str->proto_defaults[protoId].protoName = name,
+    ndpi_str->proto_defaults[protoId].protoCategory = protoCategory,
+    ndpi_str->proto_defaults[protoId].protoId = protoId,
+    ndpi_str->proto_defaults[protoId].protoBreed = breed;
+  ndpi_str->proto_defaults[protoId].can_have_a_subprotocol = can_have_a_subprotocol;
+
+  memcpy(&ndpi_str->proto_defaults[protoId].master_tcp_protoId, tcp_master_protoId, 2*sizeof(u_int16_t));
+  memcpy(&ndpi_str->proto_defaults[protoId].master_udp_protoId, udp_master_protoId, 2*sizeof(u_int16_t));
+
+  for(j=0; j<MAX_DEFAULT_PORTS; j++) {
+    if(udpDefPorts[j].port_low != 0)
+      addDefaultPort(ndpi_str, &udpDefPorts[j],
+		     &ndpi_str->proto_defaults[protoId], 0, &ndpi_str->udpRoot, __FUNCTION__,__LINE__);
+
+    if(tcpDefPorts[j].port_low != 0)
+      addDefaultPort(ndpi_str, &tcpDefPorts[j],
+		     &ndpi_str->proto_defaults[protoId], 0, &ndpi_str->tcpRoot, __FUNCTION__,__LINE__);
+  }
+}
+
+
 /* ********************************************************************************* */
 
 void ndpi_connection_tracking(struct ndpi_detection_module_struct *ndpi_str,
@@ -2443,6 +2867,112 @@ void ndpi_set_protocol_detection_bitmask2(struct ndpi_detection_module_struct *n
 			ndpi_str->callback_buffer_size_non_tcp_udp++;
 		}
 	}
+/* ****************************************** */
+void ndpi_free(void *ptr) {
+  if(_ndpi_free)
+    _ndpi_free(ptr);
+  else
+    free(ptr);
+}
+/* ****************************************************** */
+void ndpi_free_flow(struct ndpi_flow_struct *flow) {
+  if(flow) {
+  if(flow->http.url)            ndpi_free(flow->http.url);
+    if(flow->http.content_type) ndpi_free(flow->http.content_type);
+    if(flow->http.user_agent)   ndpi_free(flow->http.user_agent);
+
+    if(flow->l4_proto == IPPROTO_TCP) {
+      if(flow->l4.tcp.tls_srv_cert_fingerprint_ctx)
+	ndpi_free(flow->l4.tcp.tls_srv_cert_fingerprint_ctx);
+    }
+
+    ndpi_free(flow);
+  }
+}
+void ndpi_flow_free(void *ptr)
+{
+  if(_ndpi_flow_free)
+    _ndpi_flow_free(ptr);
+  else
+    ndpi_free_flow((struct ndpi_flow_struct *) ptr);
+}
+
+/* ****************************************************** */
+
+
+void ndpi_lru_free_cache(struct ndpi_lru_cache *c) {
+  ndpi_free(c->entries);
+  ndpi_free(c);
+}
+
+void ndpi_exit_detection_module(struct ndpi_detection_module_struct *ndpi_str) {
+  if(ndpi_str != NULL) {
+    int i;
+
+    for(i=0; i<(int)ndpi_str->ndpi_num_supported_protocols; i++)
+    {
+      if(ndpi_str->proto_defaults[i].protoName)
+	      ndpi_free(ndpi_str->proto_defaults[i].protoName);
+    }
+
+    /* NDPI_PROTOCOL_TINC */
+    if(ndpi_str->tinc_cache)
+      cache_free((cache_t)(ndpi_str->tinc_cache));
+
+    if(ndpi_str->ookla_cache)
+      ndpi_lru_free_cache(ndpi_str->ookla_cache);
+
+    if(ndpi_str->stun_cache)
+      ndpi_lru_free_cache(ndpi_str->stun_cache);
+
+    if(ndpi_str->protocols_ptree)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->protocols_ptree, free_ptree_data);
+
+    if(ndpi_str->udpRoot != NULL)
+      ndpi_tdestroy(ndpi_str->udpRoot, ndpi_free);
+    if(ndpi_str->tcpRoot != NULL)
+      ndpi_tdestroy(ndpi_str->tcpRoot, ndpi_free);
+
+    if(ndpi_str->host_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->host_automa.ac_automa, 1 /* free patterns strings memory */);
+
+    if(ndpi_str->content_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->content_automa.ac_automa, 0);
+
+    if(ndpi_str->bigrams_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->bigrams_automa.ac_automa, 0);
+
+    if(ndpi_str->impossible_bigrams_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->impossible_bigrams_automa.ac_automa, 0);
+
+#ifdef HAVE_HYPERSCAN
+    destroy_hyperscan(ndpi_str);
+
+    while(ndpi_str->custom_categories.to_load != NULL) {
+      struct hs_list *next = ndpi_str->custom_categories.to_load->next;
+
+      ndpi_free(ndpi_str->custom_categories.to_load->expression);
+      ndpi_free(ndpi_str->custom_categories.to_load);
+      ndpi_str->custom_categories.to_load = next;
+    }
+
+    free_hyperscan_memory(ndpi_str->custom_categories.hostnames);
+#else
+    if(ndpi_str->custom_categories.hostnames.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->custom_categories.hostnames.ac_automa, 1 /* free patterns strings memory */);
+
+    if(ndpi_str->custom_categories.hostnames_shadow.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->custom_categories.hostnames_shadow.ac_automa, 1 /* free patterns strings memory */);
+#endif
+
+    if(ndpi_str->custom_categories.ipAddresses != NULL)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->custom_categories.ipAddresses, free_ptree_data);
+
+    if(ndpi_str->custom_categories.ipAddresses_shadow != NULL)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->custom_categories.ipAddresses_shadow, free_ptree_data);
+
+    ndpi_free(ndpi_str);
+  }
 }
 
 int main(void)

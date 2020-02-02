@@ -1363,7 +1363,7 @@ struct ndpi_flow_struct {
   struct ndpi_id_struct *src;
   struct ndpi_id_struct *dst;
 };
-//
+
 typedef struct {
   char *string_to_match, *string2_to_match, *pattern_to_match, *proto_name;
   int protocol_id;

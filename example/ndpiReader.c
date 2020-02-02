@@ -1,3 +1,12 @@
+// #include "ndpi_main.h"
+// #include <bits/types.h>
+// #include <bits/thread-shared-types.h>
+#include "ndpi_config.h"
+
+#ifdef linux
+#define _GNU_SOURCE
+#include <sched.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
@@ -31,12 +40,51 @@
 static char *_pcap_file[MAX_NUM_READER_THREADS]; /**< Ingress pcap file/interfaces */
 static char * bpfFilter             = NULL; /**< bpf filter  */
 static u_int8_t shutdown_app = 0, quiet_mode = 0;
+static struct timeval startup_time, begin, end;
+static FILE *playlist_fp[MAX_NUM_READER_THREADS] = { NULL }; /**< Ingress playlist */
+static pcap_dumper_t *extcap_dumper = NULL;
+static char extcap_buf[16384];
+static char *extcap_capture_fifo    = NULL;
+static u_int16_t extcap_packet_filter = (u_int16_t)-1;
+static struct timeval pcap_start = { 0, 0}, pcap_end = { 0, 0 };
+static u_int8_t undetected_flows_deleted = 0;
+static u_int32_t pcap_analysis_duration = (u_int32_t)-1;
+/** User preferences **/
+u_int8_t enable_protocol_guess = 1, enable_payload_analyzer = 0;
+// struct associated to a workflow for a thread
+struct reader_thread {
+  struct ndpi_workflow *workflow;
+  pthread_t pthread;
+  u_int64_t last_idle_scan_time;
+  u_int32_t idle_scan_idx;
+  u_int32_t num_idle_flows;
+  struct ndpi_flow_info *idle_flows[IDLE_SCAN_BUDGET];
+};
+
+// array for every thread created for a flow
+static struct reader_thread ndpi_thread_info[MAX_NUM_READER_THREADS];
 
 /* Detection parameters */
 static time_t capture_for = 0;
 static time_t capture_until = 0;
 static u_int8_t live_capture = 0;
 static u_int8_t num_threads = 1;
+
+/**
+ * @brief Force a pcap_dispatch() or pcap_loop() call to return
+ */
+static void breakPcapLoop(u_int16_t thread_id)
+{
+// #ifdef USE_DPDK
+//   dpdk_run_capture = 0;
+// #else
+  if(ndpi_thread_info[thread_id].workflow->pcap_handle != NULL)
+  {
+    pcap_breakloop(ndpi_thread_info[thread_id].workflow->pcap_handle);
+  }
+// #endif
+}
+
 /**
  * @brief Sigproc is executed for each packet in the pcap file
  */
@@ -59,12 +107,10 @@ static void configurePcapHandle(pcap_t * pcap_handle) {
   if(bpfFilter != NULL) {
     struct bpf_program fcode;
     // Before applying our filter, we must "compile" it. The filter expression is kept in a regular string (char array).
-    // The syntax is documented quite well in the man page for tcpdump;
-    // I leave you to read it on your own. However, we will use simple test expressions, so perhaps you are sharp enough to figure it out from my examples.
-    // The first argument is our session handle (pcap_t *handle in our previous example).
+    // The first argument is our session handle.
     // Following that is a reference to the place we will store the compiled version of our filter.
     // Then comes the expression itself, in regular string format.
-    // Next is an integer that decides if the expression should be "optimized" or not (0 is false, 1 is true. Standard stuff.)
+    // Next is an integer that decides if the expression should be "optimized" or not (0 is false, 1 is true.)
     // Finally, we must specify the network mask of the network the filter applies to.
     // The function returns -1 on failure; all other values imply success. 
     if(pcap_compile(pcap_handle, &fcode, bpfFilter, 1, 0xFFFFFF00) < 0) {
@@ -93,6 +139,8 @@ static int getNextPcapFileFromPlaylist(u_int16_t thread_id, char filename[], u_i
   }
 
 next_line:
+// reads a line from the specified stream (playlist_fp) and stores it into the string pointed to by filename.
+// It stops when either (filename_len - 1) characters are read, the newline character is read, or the end-of-file is reached, whichever comes first.
   if(fgets(filename, filename_len, playlist_fp[thread_id])) {
     int l = strlen(filename);
     if(filename[0] == '\0' || filename[0] == '#') goto next_line;
@@ -104,6 +152,9 @@ next_line:
     return -1;
   }
 }
+/**
+ * @brief Open a pcap file or a specified device - Always returns a valid pcap_t
+ */
 static pcap_t * openPcapFileOrDevice(u_int16_t thread_id, const u_char * pcap_file) 
 {
     u_int snaplen = 1536;
@@ -123,12 +174,14 @@ static pcap_t * openPcapFileOrDevice(u_int16_t thread_id, const u_char * pcap_fi
     //     rte_exit(EXIT_FAILURE, "DPDK: Cannot init port %u: please see README.dpdk\n", dpdk_port_id);
     // #else
 
+
+
     // pcap_file is the device that we want to listen to
     // snaplen is an integer which defines the maximum number of bytes to be captured by pcap.
     // promisc, when set to true, brings the interface into promiscuous mode (however, even if it is set to false, it is possible under specific cases for the interface to be in promiscuous mode, anyway).
     // 500 is the read time out in milliseconds (a value of 0 means no time out; on at least some platforms, this means that you may wait until a sufficient number of packets arrive before seeing any packets, so you should use a non-zero timeout).
     // Lastly, pcap_error_buffer is a string we can store any error messages within.
-    // The function returns our session handler. 
+    // The function returns our session handler.
     if((pcap_handle = pcap_open_live((char*)pcap_file, snaplen,
 				   promisc, 500, pcap_error_buffer)) == NULL)
     {
@@ -188,6 +241,62 @@ static pcap_t * openPcapFileOrDevice(u_int16_t thread_id, const u_char * pcap_fi
   }
   return pcap_handle;
 }
+
+/**
+ * @brief Proto Guess Walker
+ */
+static void node_proto_guess_walker(const void *node, ndpi_VISIT which, int depth, void *user_data)
+{
+  struct ndpi_flow_info *flow = *(struct ndpi_flow_info **) node;
+  u_int16_t thread_id = *((u_int16_t *) user_data), proto;
+
+  if((which == ndpi_preorder) || (which == ndpi_leaf)) { /* Avoid walking the same node multiple times */
+    if((!flow->detection_completed) && flow->ndpi_flow) {
+      u_int8_t proto_guessed;
+
+      flow->detected_protocol = ndpi_detection_giveup(ndpi_thread_info[0].workflow->ndpi_struct,
+						      flow->ndpi_flow, enable_protocol_guess, &proto_guessed);
+    }
+
+    process_ndpi_collected_info(ndpi_thread_info[thread_id].workflow, flow);
+
+    proto = flow->detected_protocol.app_protocol ? flow->detected_protocol.app_protocol : flow->detected_protocol.master_protocol;
+
+    ndpi_thread_info[thread_id].workflow->stats.protocol_counter[proto]       += flow->src2dst_packets + flow->dst2src_packets;
+    ndpi_thread_info[thread_id].workflow->stats.protocol_counter_bytes[proto] += flow->src2dst_bytes + flow->dst2src_bytes;
+    ndpi_thread_info[thread_id].workflow->stats.protocol_flows[proto]++;
+  }
+}
+
+/**
+ * @brief Idle Scan Walker
+ */
+static void node_idle_scan_walker(const void *node, ndpi_VISIT which, int depth, void *user_data) {
+  struct ndpi_flow_info *flow = *(struct ndpi_flow_info **) node;
+  u_int16_t thread_id = *((u_int16_t *) user_data);
+
+  if(ndpi_thread_info[thread_id].num_idle_flows == IDLE_SCAN_BUDGET) /* TODO optimise with a budget-based walk */
+    return;
+
+  if((which == ndpi_preorder) || (which == ndpi_leaf)) { /* Avoid walking the same node multiple times */
+    if(flow->last_seen + MAX_IDLE_TIME < ndpi_thread_info[thread_id].workflow->last_time) {
+
+      /* update stats */
+      node_proto_guess_walker(node, which, depth, user_data);
+
+      if((flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN) && !undetected_flows_deleted)
+        undetected_flows_deleted = 1;
+
+      ndpi_free_flow_info_half(flow);
+      ndpi_free_flow_data_analysis(flow);
+      ndpi_thread_info[thread_id].workflow->stats.ndpi_flow_count--;
+
+      /* adding to a queue (we can't delete it from the tree inline ) */
+      ndpi_thread_info[thread_id].idle_flows[ndpi_thread_info[thread_id].num_idle_flows++] = flow;
+    }
+  }
+}
+
 /**
  * @brief Check pcap packet
  */
@@ -201,6 +310,111 @@ static void ndpi_process_packet(u_char *args, const struct pcap_pkthdr *header, 
 
   memcpy(packet_checked, packet, header->caplen);
   p = ndpi_workflow_process_packet(ndpi_thread_info[thread_id].workflow, header, packet_checked);
+  
+  //pcap_start => sniffing time of the first packet in the pcap file
+  //pcap_end => sniffing time of the last packet
+  if(!pcap_start.tv_sec) pcap_start.tv_sec = header->ts.tv_sec, pcap_start.tv_usec = header->ts.tv_usec;
+  pcap_end.tv_sec = header->ts.tv_sec, pcap_end.tv_usec = header->ts.tv_usec;
+
+  /* Idle flows cleanup */
+  if(live_capture)
+  {
+    if(ndpi_thread_info[thread_id].last_idle_scan_time + IDLE_SCAN_PERIOD < ndpi_thread_info[thread_id].workflow->last_time)
+    {
+      /* scan for idle flows */
+      ndpi_twalk(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[ndpi_thread_info[thread_id].idle_scan_idx],node_idle_scan_walker, &thread_id);
+
+      /* remove idle flows (unfortunately we cannot do this inline) */
+      while(ndpi_thread_info[thread_id].num_idle_flows > 0)
+      {
+	      /* search and delete the idle flow from the "ndpi_flow_root" (see struct reader thread) - here flows are the node of a b-tree */
+	      ndpi_tdelete(ndpi_thread_info[thread_id].idle_flows[--ndpi_thread_info[thread_id].num_idle_flows],
+        &ndpi_thread_info[thread_id].workflow->ndpi_flows_root[ndpi_thread_info[thread_id].idle_scan_idx],
+		     ndpi_workflow_node_cmp);
+
+	      /* free the memory associated to idle flow in "idle_flows" - (see struct reader thread)*/
+	      ndpi_free_flow_info_half(ndpi_thread_info[thread_id].idle_flows[ndpi_thread_info[thread_id].num_idle_flows]);
+	      ndpi_free(ndpi_thread_info[thread_id].idle_flows[ndpi_thread_info[thread_id].num_idle_flows]);
+      }
+
+      if(++ndpi_thread_info[thread_id].idle_scan_idx == ndpi_thread_info[thread_id].workflow->prefs.num_roots)
+	      ndpi_thread_info[thread_id].idle_scan_idx = 0;
+
+      ndpi_thread_info[thread_id].last_idle_scan_time = ndpi_thread_info[thread_id].workflow->last_time;
+    }
+  }
+
+// #ifdef DEBUG_TRACE
+//   if(trace) fprintf(trace, "Found %u bytes packet %u.%u\n", header->caplen, p.app_protocol, p.master_protocol);
+// #endif
+
+//   if(extcap_dumper
+//      && ((extcap_packet_filter == (u_int16_t)-1) || (p.app_protocol == extcap_packet_filter) || (p.master_protocol == extcap_packet_filter)))
+//   {
+//     struct pcap_pkthdr h;
+//     uint32_t *crc, delta = sizeof(struct ndpi_packet_trailer) + 4 /* ethernet trailer */;
+//     struct ndpi_packet_trailer *trailer;
+
+//     memcpy(&h, header, sizeof(h));
+
+//     if(h.caplen > (sizeof(extcap_buf)-sizeof(struct ndpi_packet_trailer) - 4))
+//     {
+//       printf("INTERNAL ERROR: caplen=%u\n", h.caplen);
+//       h.caplen = sizeof(extcap_buf)-sizeof(struct ndpi_packet_trailer) - 4;
+//     }
+
+//     trailer = (struct ndpi_packet_trailer*)&extcap_buf[h.caplen];
+//     memcpy(extcap_buf, packet, h.caplen);
+//     memset(trailer, 0, sizeof(struct ndpi_packet_trailer));
+//     trailer->magic = htonl(0x19680924);
+//     trailer->master_protocol = htons(p.master_protocol), trailer->app_protocol = htons(p.app_protocol);
+//     ndpi_protocol2name(ndpi_thread_info[thread_id].workflow->ndpi_struct, p, trailer->name, sizeof(trailer->name));
+//     crc = (uint32_t*)&extcap_buf[h.caplen+sizeof(struct ndpi_packet_trailer)];
+//     *crc = ethernet_crc32((const void*)extcap_buf, h.caplen+sizeof(struct ndpi_packet_trailer));
+//     h.caplen += delta, h.len += delta;
+
+// // #ifdef DEBUG_TRACE
+// //     if(trace) fprintf(trace, "Dumping %u bytes packet\n", h.caplen);
+// // #endif
+
+//     pcap_dump((u_char*)extcap_dumper, &h, (const u_char *)extcap_buf);
+//     pcap_dump_flush(extcap_dumper);
+//   }
+  /* check for buffer changes */
+  if(memcmp(packet, packet_checked, header->caplen) != 0)
+    printf("INTERNAL ERROR: ingress packet was modified by nDPI: this should not happen [thread_id=%u, packetId=%lu, caplen=%u]\n",
+	   thread_id, (unsigned long)ndpi_thread_info[thread_id].workflow->stats.raw_packet_count, header->caplen);
+  
+  if((pcap_end.tv_sec-pcap_start.tv_sec) > pcap_analysis_duration) {
+    int i;
+    u_int64_t processing_time_usec, setup_time_usec;
+
+    gettimeofday(&end, NULL);
+    processing_time_usec = end.tv_sec*1000000 + end.tv_usec - (begin.tv_sec*1000000 + begin.tv_usec);
+    setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
+
+    printResults(processing_time_usec, setup_time_usec);
+
+    for(i=0; i<ndpi_thread_info[thread_id].workflow->prefs.num_roots; i++) {
+      ndpi_tdestroy(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i], ndpi_flow_info_freer);
+      ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i] = NULL;
+
+      memset(&ndpi_thread_info[thread_id].workflow->stats, 0, sizeof(struct ndpi_stats));
+    }
+
+    if(!quiet_mode)
+      printf("\n-------------------------------------------\n\n");
+
+    memcpy(&begin, &end, sizeof(begin));
+    memcpy(&pcap_start, &pcap_end, sizeof(pcap_start));
+  }
+
+  /*
+     Leave the free as last statement to avoid crashes when ndpi_detection_giveup()
+     is called above by printResults()
+  */
+  free(packet_checked);
+
 }
 /**
  * @brief Call pcap_loop() to process packets from a live capture or savefile
@@ -280,6 +494,13 @@ pcap_loop:
   return NULL;
 }
 /* *********************************************** */
+
+/**
+ * @brief End of detection and free flow
+ */
+static void terminateDetection(u_int16_t thread_id) {
+  ndpi_workflow_free(ndpi_thread_info[thread_id].workflow);
+}
 
 /**
  * @brief Setup for detection begin
@@ -365,9 +586,15 @@ void test_lib() {
   struct timeval end;
   u_int64_t processing_time_usec, setup_time_usec;
   long thread_id;
+// #ifdef DEBUG_TRACE
+//   if(trace) fprintf(trace, "Num threads: %d\n", num_threads);
+// #endif
   for(thread_id = 0; thread_id < num_threads; thread_id++)
   {
-    pcap_t *cap;    
+    pcap_t *cap;
+// #ifdef DEBUG_TRACE
+//     if(trace) fprintf(trace, "Opening %s\n", (const u_char*)_pcap_file[thread_id]);
+// #endif
     cap = openPcapFileOrDevice(thread_id, (const u_char*)_pcap_file[thread_id]);
     setupDetection(thread_id, cap);
   }
@@ -382,6 +609,7 @@ void test_lib() {
   {
     // create a new thread. the new thread starts execution by invoking processing_thread
     // thread_id is passed as an argument to processing_thread
+    // Upon successful creation, pthread_create() stores the ID of the created thread in the location referenced by ndpi_thread_info[thread_id].pthread.
     // If attr is NULL, then the thread is created with default attributes.
     status = pthread_create(&ndpi_thread_info[thread_id].pthread, NULL, processing_thread, (void *) thread_id);
     /* check pthreade_create return value */
@@ -390,4 +618,34 @@ void test_lib() {
       exit(-1);
     }
   }
+  /* Waiting for completion */
+  for(thread_id = 0; thread_id < num_threads; thread_id++)
+  {
+    status = pthread_join(ndpi_thread_info[thread_id].pthread, &thd_res);
+    /* check pthreade_join return value */
+
+    // If successful, the pthread_join() function shall return zero; otherwise, an error number shall be returned to indicate the error.
+    if(status != 0) {
+      fprintf(stderr, "error on join %ld thread\n", thread_id);
+      exit(-1);
+    }
+    if(thd_res != NULL) {
+      fprintf(stderr, "error on returned value of %ld joined thread\n", thread_id);
+      exit(-1);
+    }
   }
+  gettimeofday(&end, NULL);
+  processing_time_usec = end.tv_sec*1000000 + end.tv_usec - (begin.tv_sec*1000000 + begin.tv_usec);
+  setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
+
+  /* Printing cumulative results */
+  printResults(processing_time_usec, setup_time_usec);
+
+  for(thread_id = 0; thread_id < num_threads; thread_id++)
+  {
+    if(ndpi_thread_info[thread_id].workflow->pcap_handle != NULL)
+      pcap_close(ndpi_thread_info[thread_id].workflow->pcap_handle);
+
+    terminateDetection(thread_id);
+  }
+}
