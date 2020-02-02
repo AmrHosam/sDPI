@@ -32,6 +32,9 @@ static char *_pcap_file[MAX_NUM_READER_THREADS]; /**< Ingress pcap file/interfac
 static char * bpfFilter             = NULL; /**< bpf filter  */
 static u_int8_t shutdown_app = 0, quiet_mode = 0;
 
+/** User preferences **/
+u_int8_t verbose = 0, enable_joy_stats = 0;
+
 /* Detection parameters */
 static time_t capture_for = 0;
 static time_t capture_until = 0;
@@ -40,6 +43,7 @@ static u_int8_t num_threads = 1;
 /**
  * @brief Sigproc is executed for each packet in the pcap file
  */
+
 void sigproc(int sig) {
 
   static int called = 0;
@@ -390,4 +394,7 @@ void test_lib() {
       exit(-1);
     }
   }
-  }
+}
+
+
+  
