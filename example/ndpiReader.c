@@ -392,9 +392,9 @@ static void parseOptions(int argc, char **argv) {
       }
       break;
 
-    /* case 'h':
+     case 'h':
       help(1);
-      break;*/
+      break;
 
     case 'J':
       enable_joy_stats = 1;
@@ -422,7 +422,7 @@ static void parseOptions(int argc, char **argv) {
 	  if(max_num_reported_top_payloads == 0) max_num_reported_top_payloads = 1;
 	} else {
 	  printf("Invalid -P format. Ignored\n");
-	  //help(0);
+	  help(0);
 	}
       }
       break;
@@ -490,13 +490,13 @@ static void parseOptions(int argc, char **argv) {
       break;
 
     default:
-      //help(0);
+      help(0);
       break;
     }
   }
 
   if(_pcap_file[0] == NULL)
-   // help(0);
+    help(0);
 
 #ifndef USE_DPDK
   if(strchr(_pcap_file[0], ',')) { /* multiple ingress interfaces */
