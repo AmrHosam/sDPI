@@ -17,6 +17,8 @@
 #define NUM_CUSTOM_CATEGORIES 5
 #define NDPI_PROTOCOL_BITMASK ndpi_protocol_bitmask_struct_t
 #define NDPI_MAX_NUM_CUSTOM_PROTOCOLS (NDPI_NUM_BITS - NDPI_LAST_IMPLEMENTED_PROTOCOL)
+static void  (*_ndpi_flow_free)(void *ptr);
+static void  (*_ndpi_free)(void *ptr);
 static int _ndpi_debug_callbacks = 0;
 typedef struct ndpi_default_ports_tree_node
 {
@@ -2160,6 +2162,113 @@ void ndpi_set_protocol_detection_bitmask2(struct ndpi_detection_module_struct *n
   }
 }
 
+/* ****************************************** */
+void ndpi_free(void *ptr) {
+  if(_ndpi_free)
+    _ndpi_free(ptr);
+  else
+    free(ptr);
+}
+/* ****************************************************** */
+void ndpi_free_flow(struct ndpi_flow_struct *flow) {
+  if(flow) {
+  if(flow->http.url)            ndpi_free(flow->http.url);
+    if(flow->http.content_type) ndpi_free(flow->http.content_type);
+    if(flow->http.user_agent)   ndpi_free(flow->http.user_agent);
+
+    if(flow->l4_proto == IPPROTO_TCP) {
+      if(flow->l4.tcp.tls_srv_cert_fingerprint_ctx)
+	ndpi_free(flow->l4.tcp.tls_srv_cert_fingerprint_ctx);
+    }
+
+    ndpi_free(flow);
+  }
+}
+void ndpi_flow_free(void *ptr)
+{
+  if(_ndpi_flow_free)
+    _ndpi_flow_free(ptr);
+  else
+    ndpi_free_flow((struct ndpi_flow_struct *) ptr);
+}
+
+/* ****************************************************** */
+
+
+void ndpi_lru_free_cache(struct ndpi_lru_cache *c) {
+  ndpi_free(c->entries);
+  ndpi_free(c);
+}
+
+void ndpi_exit_detection_module(struct ndpi_detection_module_struct *ndpi_str) {
+  if(ndpi_str != NULL) {
+    int i;
+
+    for(i=0; i<(int)ndpi_str->ndpi_num_supported_protocols; i++)
+    {
+      if(ndpi_str->proto_defaults[i].protoName)
+	      ndpi_free(ndpi_str->proto_defaults[i].protoName);
+    }
+
+    /* NDPI_PROTOCOL_TINC */
+    if(ndpi_str->tinc_cache)
+      cache_free((cache_t)(ndpi_str->tinc_cache));
+
+    if(ndpi_str->ookla_cache)
+      ndpi_lru_free_cache(ndpi_str->ookla_cache);
+
+    if(ndpi_str->stun_cache)
+      ndpi_lru_free_cache(ndpi_str->stun_cache);
+
+    if(ndpi_str->protocols_ptree)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->protocols_ptree, free_ptree_data);
+
+    if(ndpi_str->udpRoot != NULL)
+      ndpi_tdestroy(ndpi_str->udpRoot, ndpi_free);
+    if(ndpi_str->tcpRoot != NULL)
+      ndpi_tdestroy(ndpi_str->tcpRoot, ndpi_free);
+
+    if(ndpi_str->host_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->host_automa.ac_automa, 1 /* free patterns strings memory */);
+
+    if(ndpi_str->content_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->content_automa.ac_automa, 0);
+
+    if(ndpi_str->bigrams_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->bigrams_automa.ac_automa, 0);
+
+    if(ndpi_str->impossible_bigrams_automa.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->impossible_bigrams_automa.ac_automa, 0);
+
+#ifdef HAVE_HYPERSCAN
+    destroy_hyperscan(ndpi_str);
+
+    while(ndpi_str->custom_categories.to_load != NULL) {
+      struct hs_list *next = ndpi_str->custom_categories.to_load->next;
+
+      ndpi_free(ndpi_str->custom_categories.to_load->expression);
+      ndpi_free(ndpi_str->custom_categories.to_load);
+      ndpi_str->custom_categories.to_load = next;
+    }
+
+    free_hyperscan_memory(ndpi_str->custom_categories.hostnames);
+#else
+    if(ndpi_str->custom_categories.hostnames.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->custom_categories.hostnames.ac_automa, 1 /* free patterns strings memory */);
+
+    if(ndpi_str->custom_categories.hostnames_shadow.ac_automa != NULL)
+      ac_automata_release((AC_AUTOMATA_t*)ndpi_str->custom_categories.hostnames_shadow.ac_automa, 1 /* free patterns strings memory */);
+#endif
+
+    if(ndpi_str->custom_categories.ipAddresses != NULL)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->custom_categories.ipAddresses, free_ptree_data);
+
+    if(ndpi_str->custom_categories.ipAddresses_shadow != NULL)
+      ndpi_Destroy_Patricia((patricia_tree_t*)ndpi_str->custom_categories.ipAddresses_shadow, free_ptree_data);
+
+    ndpi_free(ndpi_str);
+  }
+}
 
 int main(void)
 {
