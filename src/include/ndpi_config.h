@@ -56,10 +56,10 @@
 /* #undef NDPI_ENABLE_DEBUG_MESSAGES */
 
 /* Last GIT change */
-#define NDPI_GIT_DATE "Mon Feb 3 13:23:21 2020 +0200"
+#define NDPI_GIT_DATE "Mon Feb 3 15:38:01 2020 +0200"
 
 /* GIT Release */
-#define NDPI_GIT_RELEASE "3.1.0-104-882d0c7"
+#define NDPI_GIT_RELEASE "3.1.0-106-19d2888"
 
 /* nDPI major release */
 #define NDPI_MAJOR_RELEASE "3"
@@ -71,28 +71,28 @@
 #define NDPI_PATCH_LEVEL "0"
 
 /* Name of package */
-/* #undef PACKAGE */
+#define PACKAGE "libndpi"
 
 /* Define to the address where bug reports for this package should be sent. */
-/* #undef PACKAGE_BUGREPORT */
+#define PACKAGE_BUGREPORT ""
 
 /* Define to the full name of this package. */
-/* #undef PACKAGE_NAME */
+#define PACKAGE_NAME "libndpi"
 
 /* Define to the full name and version of this package. */
-/* #undef PACKAGE_STRING */
+#define PACKAGE_STRING "libndpi 3.1.0"
 
 /* Define to the one symbol short name of this package. */
-/* #undef PACKAGE_TARNAME */
+#define PACKAGE_TARNAME "libndpi"
 
 /* Define to the home page for this package. */
-/* #undef PACKAGE_URL */
+#define PACKAGE_URL ""
 
 /* Define to the version of this package. */
-/* #undef PACKAGE_VERSION */
+#define PACKAGE_VERSION "3.1.0"
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
 
 /* Version number of package */
-/* #undef VERSION */
+#define VERSION "3.1.0"

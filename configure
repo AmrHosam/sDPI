@@ -2258,27 +2258,27 @@ $as_echo "/* confdefs.h */" > confdefs.h
 # Predefined preprocessor variables.
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_NAME "$PACKAGE_NAME"
+#define PACKAGE_NAME "$PACKAGE_NAME"
 _ACEOF
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_TARNAME "$PACKAGE_TARNAME"
+#define PACKAGE_TARNAME "$PACKAGE_TARNAME"
 _ACEOF
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_VERSION "$PACKAGE_VERSION"
+#define PACKAGE_VERSION "$PACKAGE_VERSION"
 _ACEOF
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_STRING "$PACKAGE_STRING"
+#define PACKAGE_STRING "$PACKAGE_STRING"
 _ACEOF
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_BUGREPORT "$PACKAGE_BUGREPORT"
+#define PACKAGE_BUGREPORT "$PACKAGE_BUGREPORT"
 _ACEOF
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE_URL "$PACKAGE_URL"
+#define PACKAGE_URL "$PACKAGE_URL"
 _ACEOF
 
 
@@ -2922,12 +2922,12 @@ fi
 
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_PACKAGE "$PACKAGE"
+#define PACKAGE "$PACKAGE"
 _ACEOF
 
 
 cat >>confdefs.h <<_ACEOF
-#define NDPI_VERSION "$VERSION"
+#define VERSION "$VERSION"
 _ACEOF
 
 # Some tools Automake needs.
@@ -9138,7 +9138,7 @@ _LT_EOF
             archive_expsym_cmds=''
         ;;
       m68k)
-            archive_cmds='$RM $output_objdir/a2ixlibrary.data~$ECHO "#define NAME $libname" > $output_objdir/a2ixlibrary.data~$ECHO "#define LIBRARY_ID 1" >> $output_objdir/a2ixlibrary.data~$ECHO "#define NDPI_VERSION $major" >> $output_objdir/a2ixlibrary.data~$ECHO "#define REVISION $revision" >> $output_objdir/a2ixlibrary.data~$AR $AR_FLAGS $lib $libobjs~$RANLIB $lib~(cd $output_objdir && a2ixlibrary -32)'
+            archive_cmds='$RM $output_objdir/a2ixlibrary.data~$ECHO "#define NAME $libname" > $output_objdir/a2ixlibrary.data~$ECHO "#define LIBRARY_ID 1" >> $output_objdir/a2ixlibrary.data~$ECHO "#define VERSION $major" >> $output_objdir/a2ixlibrary.data~$ECHO "#define REVISION $revision" >> $output_objdir/a2ixlibrary.data~$AR $AR_FLAGS $lib $libobjs~$RANLIB $lib~(cd $output_objdir && a2ixlibrary -32)'
             hardcode_libdir_flag_spec='-L$libdir'
             hardcode_minus_L=yes
         ;;
@@ -9685,7 +9685,7 @@ fi
             archive_expsym_cmds=''
         ;;
       m68k)
-            archive_cmds='$RM $output_objdir/a2ixlibrary.data~$ECHO "#define NAME $libname" > $output_objdir/a2ixlibrary.data~$ECHO "#define LIBRARY_ID 1" >> $output_objdir/a2ixlibrary.data~$ECHO "#define NDPI_VERSION $major" >> $output_objdir/a2ixlibrary.data~$ECHO "#define REVISION $revision" >> $output_objdir/a2ixlibrary.data~$AR $AR_FLAGS $lib $libobjs~$RANLIB $lib~(cd $output_objdir && a2ixlibrary -32)'
+            archive_cmds='$RM $output_objdir/a2ixlibrary.data~$ECHO "#define NAME $libname" > $output_objdir/a2ixlibrary.data~$ECHO "#define LIBRARY_ID 1" >> $output_objdir/a2ixlibrary.data~$ECHO "#define VERSION $major" >> $output_objdir/a2ixlibrary.data~$ECHO "#define REVISION $revision" >> $output_objdir/a2ixlibrary.data~$AR $AR_FLAGS $lib $libobjs~$RANLIB $lib~(cd $output_objdir && a2ixlibrary -32)'
             hardcode_libdir_flag_spec='-L$libdir'
             hardcode_minus_L=yes
         ;;
