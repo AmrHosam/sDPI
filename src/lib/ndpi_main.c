@@ -398,6 +398,35 @@ static int fill_prefix_v4(prefix_t *p, const struct in_addr *a, int b, int mb)
 
 	return (0);
 }
+/* ******************************************************************** */
+int ndpi_match_bigram(struct ndpi_detection_module_struct *ndpi_str,
+		      ndpi_automa *automa, char *bigram_to_match) {
+  AC_TEXT_t ac_input_text;
+  AC_REP_t match = { NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED, NDPI_PROTOCOL_UNRATED };
+  int rc;
+
+  if((automa->ac_automa == NULL) || (bigram_to_match == NULL))
+    return(-1);
+
+  if(!automa->ac_automa_finalized) {
+    printf("[%s:%d] [NDPI] Internal error: please call ndpi_finalize_initalization()\n", __FILE__, __LINE__);
+    return(0); /* No matches */
+  }
+
+  ac_input_text.astring = bigram_to_match, ac_input_text.length = 2;
+  rc = ac_automata_search(((AC_AUTOMATA_t*)automa->ac_automa), &ac_input_text, &match);
+
+  /*
+    As ac_automata_search can detect partial matches and continue the search process
+    in case rc == 0 (i.e. no match), we need to check if there is a partial match
+    and in this case return it
+  */
+  if((rc == 0) && (match.number != 0)) rc = 1;
+
+  return(rc ? match.number : 0);
+}
+
+/* ****************************************************** */
 static patricia_node_t *add_to_ptree(patricia_tree_t *tree, int family, void *addr, int bits)
 {
 	prefix_t prefix;
@@ -1553,42 +1582,7 @@ u_int16_t ndpi_guess_protocol_id(struct ndpi_detection_module_struct *ndpi_str,
 	}
 	else
 	{
-		/* No TCP/UDP */
-
-		switch (proto)
-		{
-		case NDPI_IPSEC_PROTOCOL_ESP:
-		case NDPI_IPSEC_PROTOCOL_AH:
-			return (NDPI_PROTOCOL_IP_IPSEC);
-			break;
-		case NDPI_GRE_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_GRE);
-			break;
-		case NDPI_ICMP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_ICMP);
-			break;
-		case NDPI_IGMP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_IGMP);
-			break;
-		case NDPI_EGP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_EGP);
-			break;
-		case NDPI_SCTP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_SCTP);
-			break;
-		case NDPI_OSPF_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_OSPF);
-			break;
-		case NDPI_IPIP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_IP_IN_IP);
-			break;
-		case NDPI_ICMPV6_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_ICMPV6);
-			break;
-		case 112:
-			return (NDPI_PROTOCOL_IP_VRRP);
-			break;
-		}
+	
 	}
 
 	return (NDPI_PROTOCOL_UNKNOWN);

@@ -18266,7 +18266,7 @@ _ACEOF
 fi
 
 
-ac_config_files="$ac_config_files Makefile example/Makefile example/Makefile.dpdk tests/Makefile libndpi.pc src/include/ndpi_define.h src/lib/Makefile python/Makefile fuzz/Makefile"
+ac_config_files="$ac_config_files Makefile example/Makefile example/Makefile.dpdk libndpi.pc src/include/ndpi_define.h src/lib/Makefile"
 
 ac_config_headers="$ac_config_headers src/include/ndpi_config.h"
 
@@ -19414,12 +19414,9 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "example/Makefile") CONFIG_FILES="$CONFIG_FILES example/Makefile" ;;
     "example/Makefile.dpdk") CONFIG_FILES="$CONFIG_FILES example/Makefile.dpdk" ;;
-    "tests/Makefile") CONFIG_FILES="$CONFIG_FILES tests/Makefile" ;;
     "libndpi.pc") CONFIG_FILES="$CONFIG_FILES libndpi.pc" ;;
     "src/include/ndpi_define.h") CONFIG_FILES="$CONFIG_FILES src/include/ndpi_define.h" ;;
     "src/lib/Makefile") CONFIG_FILES="$CONFIG_FILES src/lib/Makefile" ;;
-    "python/Makefile") CONFIG_FILES="$CONFIG_FILES python/Makefile" ;;
-    "fuzz/Makefile") CONFIG_FILES="$CONFIG_FILES fuzz/Makefile" ;;
     "src/include/ndpi_config.h") CONFIG_HEADERS="$CONFIG_HEADERS src/include/ndpi_config.h" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
