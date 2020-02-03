@@ -13,7 +13,7 @@
 prefix     = /usr/local
 libdir     = ${prefix}/lib
 includedir = ${prefix}/include/ndpi
-CC         = gcc
+CC         = clang
 CFLAGS     += -fPIC -DPIC -I../include -Ithird_party/include -DNDPI_LIB_COMPILATION -O2 -g -Wall 
 RANLIB     = ranlib
 

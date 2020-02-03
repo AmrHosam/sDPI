@@ -86,12 +86,13 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-build_triplet = x86_64-pc-linux-gnu
-host_triplet = x86_64-pc-linux-gnu
-#am__append_1 = fuzz
+build_triplet = x86_64-apple-darwin18.7.0
+host_triplet = x86_64-apple-darwin18.7.0
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_pthread.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/libtool.m4 \
+	$(top_srcdir)/m4/ltoptions.m4 $(top_srcdir)/m4/ltsugar.m4 \
+	$(top_srcdir)/m4/ltversion.m4 $(top_srcdir)/m4/lt~obsolete.m4 \
 	$(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -102,7 +103,7 @@ am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
 mkinstalldirs = $(install_sh) -d
 CONFIG_HEADER = $(top_builddir)/src/include/ndpi_config.h
 CONFIG_CLEAN_FILES = example/Makefile example/Makefile.dpdk libndpi.pc \
-	src/include/ndpi_define.h src/lib/Makefile python/Makefile
+	src/include/ndpi_define.h src/lib/Makefile
 CONFIG_CLEAN_VPATH_FILES =
 AM_V_P = $(am__v_P_$(V))
 am__v_P_ = $(am__v_P_$(AM_DEFAULT_VERBOSITY))
@@ -188,15 +189,14 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = src/lib example tests fuzz
+DIST_SUBDIRS = $(SUBDIRS)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/libndpi.pc.in \
 	$(top_srcdir)/example/Makefile.dpdk.in \
 	$(top_srcdir)/example/Makefile.in \
-	$(top_srcdir)/python/Makefile.in \
 	$(top_srcdir)/src/include/ndpi_config.h.in \
 	$(top_srcdir)/src/include/ndpi_define.h.in \
-	$(top_srcdir)/src/lib/Makefile.in COPYING INSTALL compile \
-	config.guess config.sub depcomp install-sh missing
+	$(top_srcdir)/src/lib/Makefile.in compile config.guess \
+	config.sub install-sh ltmain.sh missing
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 distdir = $(PACKAGE)-$(VERSION)
 top_distdir = $(distdir)
@@ -239,34 +239,40 @@ distuninstallcheck_listfiles = find . -type f -print
 am__distuninstallcheck_listfiles = $(distuninstallcheck_listfiles) \
   | sed 's|^\./|$(prefix)/|' | grep -v '$(infodir)/dir$$'
 distcleancheck_listfiles = find . -type f -print
-ACLOCAL = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/missing aclocal-1.15
+ACLOCAL = ${SHELL} "/Users/rangarz/Desktop/untitled folder/sDPI/missing" aclocal-1.16
 AMTAR = $${TAR-tar}
 AM_DEFAULT_VERBOSITY = 1
-AUTOCONF = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/missing autoconf
-AUTOHEADER = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/missing autoheader
-AUTOMAKE = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/missing automake-1.15
-AWK = mawk
-CC = gcc
+AR = ar
+AUTOCONF = ${SHELL} "/Users/rangarz/Desktop/untitled folder/sDPI/missing" autoconf
+AUTOHEADER = ${SHELL} "/Users/rangarz/Desktop/untitled folder/sDPI/missing" autoheader
+AUTOMAKE = ${SHELL} "/Users/rangarz/Desktop/untitled folder/sDPI/missing" automake-1.16
+AWK = gawk
+CC = clang
 CCDEPMODE = depmode=none
-CFLAGS = -g -O2
+CFLAGS = -g -O2 -I/usr/local/Cellar/json-c/0.13.1/include/json-c
 CPP = gcc -E
 CPPFLAGS = 
 CUSTOM_NDPI = 
 CXX = g++
+CXXCPP = g++ -E
 CXXDEPMODE = depmode=none
 CXXFLAGS = -g -O2
 CYGPATH_W = echo
 DEFS = -DHAVE_CONFIG_H
 DEPDIR = .deps
+DLLTOOL = false
 DL_LIB = 
 DPDK_TARGET = 
-ECHO_C = 
-ECHO_N = -n
+DSYMUTIL = dsymutil
+DUMPBIN = 
+ECHO_C = \c
+ECHO_N = 
 ECHO_T = 
-EGREP = /bin/grep -E
+EGREP = /usr/bin/grep -E
 EXEEXT = 
-GIT_RELEASE = 3.1.0-98-1035d03
-GREP = /bin/grep
+FGREP = /usr/bin/grep -F
+GIT_RELEASE = 3.1.0-100-74798dd
+GREP = /usr/bin/grep
 HAVE_PTHREAD_SETAFFINITY_NP = 
 HS_CFLAGS = 
 HS_LIBS = 
@@ -275,21 +281,32 @@ INSTALL_DATA = ${INSTALL} -m 644
 INSTALL_PROGRAM = ${INSTALL}
 INSTALL_SCRIPT = ${INSTALL}
 INSTALL_STRIP_PROGRAM = $(install_sh) -c -s
-JSONC_CFLAGS = 
-JSONC_LIBS = 
+JSONC_CFLAGS = -I/usr/local/Cellar/json-c/0.13.1/include/json-c
+JSONC_LIBS = -L/usr/local/Cellar/json-c/0.13.1/lib -ljson-c
 JSON_C_LIB = 
-LDFLAGS = 
+LD = /Library/Developer/CommandLineTools/usr/bin/ld
+LDFLAGS =  -L/usr/local/Cellar/json-c/0.13.1/lib -ljson-c
 LIBOBJS = 
 LIBS = 
+LIBTOOL = $(SHELL) $(top_builddir)/libtool
 LIB_FUZZING_ENGINE = 
+LIPO = lipo
+LN_S = ln -s
 LTLIBOBJS = 
-MAKEINFO = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/missing makeinfo
-MKDIR_P = /bin/mkdir -p
+LT_SYS_LIBRARY_PATH = 
+MAKEINFO = ${SHELL} "/Users/rangarz/Desktop/untitled folder/sDPI/missing" makeinfo
+MANIFEST_TOOL = :
+MKDIR_P = ./install-sh -c -d
 NDPI_MAJOR = 3
 NDPI_MINOR = 1
 NDPI_PATCH = 0
 NDPI_VERSION_SHORT = 3.1.0
+NM = /usr/bin/nm -B
+NMEDIT = nmedit
+OBJDUMP = objdump
 OBJEXT = o
+OTOOL = otool
+OTOOL64 = :
 PACKAGE = libndpi
 PACKAGE_BUGREPORT = 
 PACKAGE_NAME = libndpi
@@ -300,51 +317,50 @@ PACKAGE_VERSION = 3.1.0
 PATH_SEPARATOR = :
 PCAP_INC = 
 PCAP_LIB = -lpcap
-PKG_CONFIG = /usr/bin/pkg-config
+PKG_CONFIG = /usr/local/bin/pkg-config
 PKG_CONFIG_LIBDIR = 
 PKG_CONFIG_PATH = 
-PTHREAD_CC = @PTHREAD_CC@
-PTHREAD_CFLAGS = @PTHREAD_CFLAGS@
-PTHREAD_LIBS = @PTHREAD_LIBS@
-SED = /bin/sed
+RANLIB = ranlib
+SED = /usr/bin/sed
 SET_MAKE = 
-SHELL = /bin/bash
+SHELL = /bin/sh
 STRIP = strip
 SVN_DATE = 
 VERSION = 3.1.0
-abs_builddir = /home/omarnagah/eclipse-workspace-new/sDPI
-abs_srcdir = /home/omarnagah/eclipse-workspace-new/sDPI
-abs_top_builddir = /home/omarnagah/eclipse-workspace-new/sDPI
-abs_top_srcdir = /home/omarnagah/eclipse-workspace-new/sDPI
+abs_builddir = /Users/rangarz/Desktop/untitled folder/sDPI
+abs_srcdir = /Users/rangarz/Desktop/untitled folder/sDPI
+abs_top_builddir = /Users/rangarz/Desktop/untitled folder/sDPI
+abs_top_srcdir = /Users/rangarz/Desktop/untitled folder/sDPI
+ac_ct_AR = ar
 ac_ct_CC = gcc
 ac_ct_CXX = g++
+ac_ct_DUMPBIN = 
 am__include = include
 am__leading_dot = .
 am__quote = 
 am__tar = $${TAR-tar} chof - "$$tardir"
 am__untar = $${TAR-tar} xf -
-ax_pthread_config = @ax_pthread_config@
 bindir = ${exec_prefix}/bin
-build = x86_64-pc-linux-gnu
+build = x86_64-apple-darwin18.7.0
 build_alias = 
 build_cpu = x86_64
-build_os = linux-gnu
-build_vendor = pc
+build_os = darwin18.7.0
+build_vendor = apple
 builddir = .
 datadir = ${datarootdir}
 datarootdir = ${prefix}/share
 docdir = ${datarootdir}/doc/${PACKAGE_TARNAME}
 dvidir = ${docdir}
 exec_prefix = ${prefix}
-host = x86_64-pc-linux-gnu
+host = x86_64-apple-darwin18.7.0
 host_alias = 
 host_cpu = x86_64
-host_os = linux-gnu
-host_vendor = pc
+host_os = darwin18.7.0
+host_vendor = apple
 htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
-install_sh = ${SHELL} /home/omarnagah/eclipse-workspace-new/sDPI/install-sh
+install_sh = ${SHELL} '/Users/rangarz/Desktop/untitled folder/sDPI/install-sh'
 libdir = ${exec_prefix}/lib
 libexecdir = ${exec_prefix}/libexec
 localedir = ${datarootdir}/locale
@@ -365,7 +381,7 @@ top_build_prefix =
 top_builddir = .
 top_srcdir = .
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src/lib example tests $(am__append_1)
+SUBDIRS = src/lib example 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libndpi.pc
 EXTRA_DIST = autogen.sh
@@ -430,8 +446,15 @@ src/include/ndpi_define.h: $(top_builddir)/config.status $(top_srcdir)/src/inclu
 	cd $(top_builddir) && $(SHELL) ./config.status $@
 src/lib/Makefile: $(top_builddir)/config.status $(top_srcdir)/src/lib/Makefile.in
 	cd $(top_builddir) && $(SHELL) ./config.status $@
-python/Makefile: $(top_builddir)/config.status $(top_srcdir)/python/Makefile.in
-	cd $(top_builddir) && $(SHELL) ./config.status $@
+
+mostlyclean-libtool:
+	-rm -f *.lo
+
+clean-libtool:
+	-rm -rf .libs _libs
+
+distclean-libtool:
+	-rm -f libtool config.lt
 install-pkgconfigDATA: $(pkgconfig_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(pkgconfig_DATA)'; test -n "$(pkgconfigdir)" || list=; \
@@ -791,12 +814,13 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-recursive
 
-clean-am: clean-generic mostlyclean-am
+clean-am: clean-generic clean-libtool mostlyclean-am
 
 distclean: distclean-recursive
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -f Makefile
-distclean-am: clean-am distclean-generic distclean-hdr distclean-tags
+distclean-am: clean-am distclean-generic distclean-hdr \
+	distclean-libtool distclean-tags
 
 dvi: dvi-recursive
 
@@ -846,7 +870,7 @@ maintainer-clean-am: distclean-am maintainer-clean-generic
 
 mostlyclean: mostlyclean-recursive
 
-mostlyclean-am: mostlyclean-generic
+mostlyclean-am: mostlyclean-generic mostlyclean-libtool
 
 pdf: pdf-recursive
 
@@ -862,19 +886,20 @@ uninstall-am: uninstall-pkgconfigDATA
 
 .PHONY: $(am__recursive_targets) CTAGS GTAGS TAGS all all-am \
 	am--refresh check check-am clean clean-cscope clean-generic \
-	cscope cscopelist-am ctags ctags-am dist dist-all dist-bzip2 \
-	dist-gzip dist-lzip dist-shar dist-tarZ dist-xz dist-zip \
-	distcheck distclean distclean-generic distclean-hdr \
-	distclean-tags distcleancheck distdir distuninstallcheck dvi \
-	dvi-am html html-am info info-am install install-am \
-	install-data install-data-am install-dvi install-dvi-am \
-	install-exec install-exec-am install-html install-html-am \
-	install-info install-info-am install-man install-pdf \
-	install-pdf-am install-pkgconfigDATA install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	installdirs-am maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-generic pdf pdf-am ps ps-am tags \
-	tags-am uninstall uninstall-am uninstall-pkgconfigDATA
+	clean-libtool cscope cscopelist-am ctags ctags-am dist \
+	dist-all dist-bzip2 dist-gzip dist-lzip dist-shar dist-tarZ \
+	dist-xz dist-zip distcheck distclean distclean-generic \
+	distclean-hdr distclean-libtool distclean-tags distcleancheck \
+	distdir distuninstallcheck dvi dvi-am html html-am info \
+	info-am install install-am install-data install-data-am \
+	install-dvi install-dvi-am install-exec install-exec-am \
+	install-html install-html-am install-info install-info-am \
+	install-man install-pdf install-pdf-am install-pkgconfigDATA \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs installdirs-am maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-generic \
+	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
+	uninstall-am uninstall-pkgconfigDATA
 
 .PRECIOUS: Makefile
 

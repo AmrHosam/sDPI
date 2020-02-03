@@ -1,9 +1,6 @@
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src/lib example tests
+SUBDIRS = src/lib example 
 
-if BUILD_FUZZTARGETS
-SUBDIRS += fuzz
-endif
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = libndpi.pc

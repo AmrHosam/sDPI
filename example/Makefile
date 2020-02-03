@@ -1,8 +1,8 @@
-CC=gcc
+CC=clang
 CXX=g++
-CFLAGS=-g -I../src/include -g -O2
+CFLAGS=-g -I../src/include -g -O2 -I/usr/local/Cellar/json-c/0.13.1/include/json-c
 LIBNDPI=../src/lib/libndpi.a
-LDFLAGS=$(LIBNDPI) -lpcap -lpthread -lm 
+LDFLAGS=$(LIBNDPI) -lpcap -lpthread -lm  -L/usr/local/Cellar/json-c/0.13.1/lib -ljson-c
 OBJS=ndpiReader.o reader_util.o
 PREFIX?=/usr/local
 

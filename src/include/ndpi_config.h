@@ -11,7 +11,7 @@
 #define HAVE_INTTYPES_H 1
 
 /* The JSON-C library is present */
-/* #undef HAVE_JSON_C */
+#define HAVE_JSON_C 1
 
 /* Define to 1 if you have the `m' library (-lm). */
 /* #undef HAVE_LIBM */
@@ -25,14 +25,8 @@
 /* Define to 1 if you have the <netinet/in.h> header file. */
 #define HAVE_NETINET_IN_H 1
 
-/* Define if you have POSIX threads libraries and header files. */
-#define HAVE_PTHREAD 1
-
-/* Have PTHREAD_PRIO_INHERIT. */
-#define HAVE_PTHREAD_PRIO_INHERIT 1
-
 /* libc has pthread_setaffinity_np */
-#define HAVE_PTHREAD_SETAFFINITY_NP 1
+/* #undef HAVE_PTHREAD_SETAFFINITY_NP */
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1
@@ -62,10 +56,10 @@
 /* #undef NDPI_ENABLE_DEBUG_MESSAGES */
 
 /* Last GIT change */
-#define NDPI_GIT_DATE "Thu Nov 21 22:31:52 UTC 2019"
+#define NDPI_GIT_DATE "Mon Feb 3 11:51:24 2020 +0200"
 
 /* GIT Release */
-#define NDPI_GIT_RELEASE "3.1.0"
+#define NDPI_GIT_RELEASE "3.1.0-100-74798dd"
 
 /* nDPI major release */
 #define NDPI_MAJOR_RELEASE "3"
@@ -96,10 +90,6 @@
 
 /* Define to the version of this package. */
 /* #undef PACKAGE_VERSION */
-
-/* Define to necessary symbol if this constant uses a non-standard name on
-   your system. */
-/* #undef PTHREAD_CREATE_JOINABLE */
 
 /* Define to 1 if you have the ANSI C header files. */
 #define STDC_HEADERS 1
