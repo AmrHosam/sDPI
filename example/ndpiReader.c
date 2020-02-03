@@ -159,7 +159,7 @@ static struct option longopts[] = {
 };
 /* ********************************** */
 static struct flow_info *all_flows;
-
+static void printResults(u_int64_t processing_time_usec, u_int64_t setup_time_usec);
 void printCSVHeader() {
   if(!csv_fp) return;
 
@@ -1035,7 +1035,7 @@ static void ndpi_process_packet(u_char *args, const struct pcap_pkthdr *header, 
     processing_time_usec = end.tv_sec*1000000 + end.tv_usec - (begin.tv_sec*1000000 + begin.tv_usec);
     setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
 
-    //printResults(processing_time_usec, setup_time_usec);
+    printResults(processing_time_usec, setup_time_usec);
 
     for(i=0; i<ndpi_thread_info[thread_id].workflow->prefs.num_roots; i++) {
       ndpi_tdestroy(ndpi_thread_info[thread_id].workflow->ndpi_flows_root[i], ndpi_flow_info_freer);
@@ -2851,7 +2851,7 @@ void test_lib() {
   setup_time_usec = begin.tv_sec*1000000 + begin.tv_usec - (startup_time.tv_sec*1000000 + startup_time.tv_usec);
 
   /* Printing cumulative results */
-  //printResults(processing_time_usec, setup_time_usec);
+  printResults(processing_time_usec, setup_time_usec);
 
   for(thread_id = 0; thread_id < num_threads; thread_id++)
   {
