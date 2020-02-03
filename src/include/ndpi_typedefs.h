@@ -27,6 +27,13 @@
 #include "ndpi_define.h"
 #include "ndpi_protocol_ids.h"
 
+typedef enum {
+	      ndpi_l4_proto_unknown = 0,
+	      ndpi_l4_proto_tcp_only,
+	      ndpi_l4_proto_udp_only,
+	      ndpi_l4_proto_tcp_and_udp,
+} ndpi_l4_proto_info;
+
 /* NDPI_LOG_LEVEL */
 typedef enum {
 	      NDPI_LOG_ERROR,
@@ -35,12 +42,6 @@ typedef enum {
 	      NDPI_LOG_DEBUG_EXTRA
 } ndpi_log_level_t;
 
-typedef enum {
-	      ndpi_l4_proto_unknown = 0,
-	      ndpi_l4_proto_tcp_only,
-	      ndpi_l4_proto_udp_only,
-	      ndpi_l4_proto_tcp_and_udp,
-} ndpi_l4_proto_info;
 
 typedef enum {
   ndpi_no_tunnel = 0,

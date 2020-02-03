@@ -20,7 +20,7 @@
 static void  (*_ndpi_flow_free)(void *ptr);
 static void  (*_ndpi_free)(void *ptr);
 static int _ndpi_debug_callbacks = 0;
-* ****************************************** */
+/* ****************************************** */
 
 /* Keep it in order and in sync with ndpi_protocol_category_t in ndpi_typedefs.h */
 static const char* categories[] = {
@@ -138,23 +138,6 @@ static void  (*_ndpi_flow_free)(void *ptr);
 
 static void *(*_ndpi_malloc)(size_t size);
 static void  (*_ndpi_free)(void *ptr);
-
-typedef struct ndpi_default_ports_tree_node
-{
-	ndpi_proto_defaults_t *proto;
-	u_int8_t customUserProto;
-	u_int16_t default_port;
-} ndpi_default_ports_tree_node_t;
-typedef struct ndpi_proto_defaults
-{
-	char *protoName;
-	ndpi_protocol_category_t protoCategory;
-	u_int8_t can_have_a_subprotocol;
-	u_int16_t protoId, protoIdx;
-	u_int16_t master_tcp_protoId[2], master_udp_protoId[2]; /* The main protocols on which this sub-protocol sits on */
-	ndpi_protocol_breed_t protoBreed;
-	void (*func)(struct ndpi_detection_module_struct *, struct ndpi_flow_struct *flow);
-} ndpi_proto_defaults_t;
 typedef enum
 {
 	NDPI_LOG_ERROR,
