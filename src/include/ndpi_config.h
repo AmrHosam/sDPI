@@ -11,7 +11,7 @@
 #define HAVE_INTTYPES_H 1
 
 /* The JSON-C library is present */
-#define HAVE_JSON_C 1
+/* #undef HAVE_JSON_C */
 
 /* Define to 1 if you have the `m' library (-lm). */
 /* #undef HAVE_LIBM */
@@ -26,7 +26,7 @@
 #define HAVE_NETINET_IN_H 1
 
 /* libc has pthread_setaffinity_np */
-/* #undef HAVE_PTHREAD_SETAFFINITY_NP */
+#define HAVE_PTHREAD_SETAFFINITY_NP 1
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1
@@ -56,10 +56,10 @@
 /* #undef NDPI_ENABLE_DEBUG_MESSAGES */
 
 /* Last GIT change */
-#define NDPI_GIT_DATE "Mon Feb 3 11:51:24 2020 +0200"
+#define NDPI_GIT_DATE "Mon Feb 3 13:23:21 2020 +0200"
 
 /* GIT Release */
-#define NDPI_GIT_RELEASE "3.1.0-100-74798dd"
+#define NDPI_GIT_RELEASE "3.1.0-104-882d0c7"
 
 /* nDPI major release */
 #define NDPI_MAJOR_RELEASE "3"
