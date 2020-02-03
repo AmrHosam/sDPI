@@ -1,6 +1,23 @@
-// #include "ndpi_main.h"
-// #include <bits/types.h>
-// #include <bits/thread-shared-types.h>
+/*
+ * ndpiReader.c
+ *
+ * Copyright (C) 2011-19 - ntop.org
+ *
+ * nDPI is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * nDPI is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with nDPI.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
 #include "ndpi_config.h"
 
 #ifdef linux
@@ -283,6 +300,97 @@ void extcap_capture() {
 
 /* ********************************** */
 
+/**
+ * @brief Print help instructions
+ */
+static void help(u_int long_help) {
+  printf("Welcome to nDPI %s\n\n", ndpi_revision());
+
+  printf("ndpiReader "
+#ifndef USE_DPDK
+	 "-i <file|device> "
+#endif
+	 "[-f <filter>][-s <duration>][-m <duration>]\n"
+	 "          [-p <protos>][-l <loops> [-q][-d][-J][-h][-e <len>][-t][-v <level>]\n"
+	 "          [-n <threads>][-w <file>][-c <file>][-C <file>][-j <file>][-x <file>]\n"
+	 "          [-T <num>][-U <num>]\n\n"
+	 "Usage:\n"
+	 "  -i <file.pcap|device>     | Specify a pcap file/playlist to read packets from or a\n"
+	 "                            | device for live capture (comma-separated list)\n"
+	 "  -f <BPF filter>           | Specify a BPF filter for filtering selected traffic\n"
+	 "  -s <duration>             | Maximum capture duration in seconds (live traffic capture only)\n"
+	 "  -m <duration>             | Split analysis duration in <duration> max seconds\n"
+	 "  -p <file>.protos          | Specify a protocol file (eg. protos.txt)\n"
+	 "  -l <num loops>            | Number of detection loops (test only)\n"
+	 "  -n <num threads>          | Number of threads. Default: number of interfaces in -i.\n"
+	 "                            | Ignored with pcap files.\n"
+#ifdef linux
+         "  -g <id:id...>             | Thread affinity mask (one core id per thread)\n"
+#endif
+	 "  -d                        | Disable protocol guess and use only DPI\n"
+	 "  -e <len>                  | Min human readeable string match len. Default %u\n"
+	 "  -q                        | Quiet mode\n"
+	 "  -J                        | Display flow SPLT (sequence of packet length and time)\n"
+	 "                            | and BD (byte distribution). See https://github.com/cisco/joy\n"
+	 "  -t                        | Dissect GTP/TZSP tunnels\n"
+	 "  -P <a>:<b>:<c>:<d>:<e>    | Enable payload analysis:\n"
+	 "                            | <a> = min pattern len to search\n"
+	 "                            | <b> = max pattern len to search\n"
+	 "                            | <c> = max num packets per flow\n"
+	 "                            | <d> = max packet payload dissection\n"
+	 "                            | <d> = max num reported payloads\n"
+	 "                            | Default: %u:%u:%u:%u:%u\n"
+	 "  -r                        | Print nDPI version and git revision\n"
+	 "  -c <path>                 | Load custom categories from the specified file\n"
+	 "  -C <path>                 | Write output in CSV format on the specified file\n"
+	 "  -w <path>                 | Write test output on the specified file. This is useful for\n"
+	 "                            | testing purposes in order to compare results across runs\n"
+	 "  -h                        | This help\n"
+	 "  -v <1|2|3>                | Verbose 'unknown protocol' packet print.\n"
+	 "                            | 1 = verbose\n"
+	 "                            | 2 = very verbose\n"
+	 "                            | 3 = port stats\n"
+	 "  -V <1-4>                  | nDPI logging level\n"
+	 "                            | 1 - trace, 2 - debug, 3 - full debug\n"
+	 "                            | >3 - full debug + dbg_proto = all\n"
+	 "  -T <num>                  | Max number of TCP processed packets before giving up [default: %u]\n"
+	 "  -U <num>                  | Max number of UDP processed packets before giving up [default: %u]\n"
+	 ,
+	 human_readeable_string_len,
+	 min_pattern_len, max_pattern_len, max_num_packets_per_flow, max_packet_payload_dissection,
+	 max_num_reported_top_payloads, max_num_tcp_dissected_pkts, max_num_udp_dissected_pkts);
+
+#ifndef WIN32
+  printf("\nExcap (wireshark) options:\n"
+	 "  --extcap-interfaces\n"
+	 "  --extcap-version\n"
+	 "  --extcap-dlts\n"
+	 "  --extcap-interface <name>\n"
+	 "  --extcap-config\n"
+	 "  --capture\n"
+	 "  --extcap-capture-filter\n"
+	 "  --fifo <path to file or pipe>\n"
+	 "  --debug\n"
+	 "  --dbg-proto proto|num[,...]\n"
+    );
+#endif
+
+  if(long_help) {
+    NDPI_PROTOCOL_BITMASK all;
+
+    printf("\n\nnDPI supported protocols:\n");
+    printf("%3s %-22s %-8s %-12s %s\n", "Id", "Protocol", "Layer_4", "Breed", "Category");
+    num_threads = 1;
+
+    NDPI_BITMASK_SET_ALL(all);
+    ndpi_set_protocol_detection_bitmask2(ndpi_info_mod, &all);
+
+    ndpi_dump_protocols(ndpi_info_mod);
+  }
+  exit(!long_help);
+}
+
+
 
 
 
@@ -532,6 +640,7 @@ static void parseOptions(int argc, char **argv) {
   if(trace) fclose(trace);
 #endif
 }
+extern void ndpi_report_payload_stats();
 
 typedef struct node_a{
   u_int32_t addr;
@@ -1536,9 +1645,6 @@ char* formatTraffic(float numBits, int bits, char *buf) {
   return(buf);
 }
 
-u_int ndpi_get_num_supported_protocols(struct ndpi_detection_module_struct *ndpi_str) {
-  return(ndpi_str->ndpi_num_supported_protocols);
-}
 
 
 /* *********************************************** */
@@ -1685,43 +1791,8 @@ static char* print_cipher(ndpi_cipher_weakness c) {
   }
 }
 
-/* ********************************** */
-
-int cmpFlows(const void *_a, const void *_b) {
-  struct ndpi_flow_info *fa = ((struct flow_info*)_a)->flow;
-  struct ndpi_flow_info *fb = ((struct flow_info*)_b)->flow;
-  uint64_t a_size = fa->src2dst_bytes + fa->dst2src_bytes;
-  uint64_t b_size = fb->src2dst_bytes + fb->dst2src_bytes;
-  if(a_size != b_size)
-    return a_size < b_size ? 1 : -1;
-
-// copy from ndpi_workflow_node_cmp();
-
-  if(fa->ip_version < fb->ip_version ) return(-1); else { if(fa->ip_version > fb->ip_version ) return(1); }
-  if(fa->protocol   < fb->protocol   ) return(-1); else { if(fa->protocol   > fb->protocol   ) return(1); }
-  if(htonl(fa->src_ip)   < htonl(fb->src_ip)  ) return(-1); else { if(htonl(fa->src_ip)   > htonl(fb->src_ip)  ) return(1); }
-  if(htons(fa->src_port) < htons(fb->src_port)) return(-1); else { if(htons(fa->src_port) > htons(fb->src_port)) return(1); }
-  if(htonl(fa->dst_ip)   < htonl(fb->dst_ip)  ) return(-1); else { if(htonl(fa->dst_ip)   > htonl(fb->dst_ip)  ) return(1); }
-  if(htons(fa->dst_port) < htons(fb->dst_port)) return(-1); else { if(htons(fa->dst_port) > htons(fb->dst_port)) return(1); }
-  return(0);
-}
 
 
-/* ********************************************************************************* */
-
-/*
-  Upload / download ration
-
-  -1  Download
-  0   Mixed
-  1   Upload
- */
-float ndpi_data_ratio(u_int32_t sent, u_int32_t rcvd) {
-  float s = (float)((int64_t)sent +  (int64_t)rcvd);
-  float d = (float)((int64_t)sent -  (int64_t)rcvd);
-  
-  return((s == 0) ? 0 : (d/s));
-}
 
 /* ********************************** */
 
@@ -1772,7 +1843,7 @@ float ndpi_flow_get_byte_count_entropy(const uint32_t byte_count[256],
 
   for(i=0; i<256; i++) {
     tmp = (float) byte_count[i] / (float) num_bytes;
-    if(tmp > FLT_EPSILON) {
+    if(tmp > __FLT_EPSILON__) {
       sum -= tmp * logf(tmp);
     }
   }

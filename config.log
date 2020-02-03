@@ -584,8 +584,8 @@ configure: failed program was:
 | #define NDPI_MAJOR_RELEASE "3"
 | #define NDPI_MINOR_RELEASE "1"
 | #define NDPI_PATCH_LEVEL "0"
-| #define NDPI_GIT_RELEASE "3.1.0-86-9ed33a8"
-| #define NDPI_GIT_DATE "Sun Feb 2 12:52:20 2020 +0200"
+| #define NDPI_GIT_RELEASE "3.1.0-98-1035d03"
+| #define NDPI_GIT_DATE "Sun Feb 2 23:06:38 2020 +0200"
 | #define HAVE_NETINET_IN_H 1
 | #define HAVE_STDINT_H 1
 | #define HAVE_STDLIB_H 1
@@ -833,7 +833,7 @@ ECHO_T=''
 EGREP='/bin/grep -E'
 EXEEXT=''
 FGREP='/bin/grep -F'
-GIT_RELEASE='3.1.0-86-9ed33a8'
+GIT_RELEASE='3.1.0-98-1035d03'
 GREP='/bin/grep'
 HAS_FUZZLDFLAGS_FALSE=''
 HAS_FUZZLDFLAGS_TRUE='#'
@@ -972,8 +972,8 @@ target_alias=''
 #define NDPI_MAJOR_RELEASE "3"
 #define NDPI_MINOR_RELEASE "1"
 #define NDPI_PATCH_LEVEL "0"
-#define NDPI_GIT_RELEASE "3.1.0-86-9ed33a8"
-#define NDPI_GIT_DATE "Sun Feb 2 12:52:20 2020 +0200"
+#define NDPI_GIT_RELEASE "3.1.0-98-1035d03"
+#define NDPI_GIT_DATE "Sun Feb 2 23:06:38 2020 +0200"
 #define HAVE_NETINET_IN_H 1
 #define HAVE_STDINT_H 1
 #define HAVE_STDLIB_H 1

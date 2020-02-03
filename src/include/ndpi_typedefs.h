@@ -980,8 +980,8 @@ typedef struct ndpi_proto {
 
 #define NUM_CUSTOM_CATEGORIES      5
 #define CUSTOM_CATEGORY_LABEL_LEN 32
-
-#ifdef NDPI_LIB_COMPILATION
+//#define NDPI_LIB_COMPILATION 
+//#ifdef NDPI_LIB_COMPILATION
 
 /* Needed to have access to HAVE_* defines */
 #include "ndpi_config.h"
@@ -1125,7 +1125,7 @@ struct ndpi_detection_module_struct {
   void *hyperscan; /* Intel Hyperscan */
 };
 
-#endif /* NDPI_LIB_COMPILATION */
+//#endif /* NDPI_LIB_COMPILATION */
 
 typedef enum {
    ndpi_cipher_safe = NDPI_CIPHER_SAFE,

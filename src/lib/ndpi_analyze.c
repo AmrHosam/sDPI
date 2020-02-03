@@ -1,6 +1,38 @@
+/*
+ * ndpi_analyze.c
+ *
+ * Copyright (C) 2019 - ntop.org
+ *
+ * This file is part of nDPI, an open source deep packet inspection
+ * library.
+ *
+ * nDPI is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * nDPI is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with nDPI.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+
+#ifdef HAVE_CONFIG_H
+#include "ndpi_config.h"
+#endif
+
+#include <stdlib.h>
+#include <errno.h>
 #include <sys/types.h>
-#include "ndpi_api.h"
+#include <stdint.h>
 #include <math.h>
+#include <float.h> /* FLT_EPSILON */
+#include "../include/ndpi_api.h"
+#include "../include/ndpi_config.h"
 void ndpi_init_data_analysis(struct ndpi_analyze_struct *ret, u_int16_t _max_series_len) {
   u_int32_t len;
 
@@ -66,6 +98,19 @@ void ndpi_data_add_value(struct ndpi_analyze_struct *s, const u_int32_t value)
 void ndpi_free_data_analysis(struct ndpi_analyze_struct *d) {
   if(d->values) ndpi_free(d->values);
   ndpi_free(d);
+}
+/*
+  Upload / download ration
+
+  -1  Download
+  0   Mixed
+  1   Upload
+ */
+float ndpi_data_ratio(u_int32_t sent, u_int32_t rcvd) {
+  float s = (float)((int64_t)sent +  (int64_t)rcvd);
+  float d = (float)((int64_t)sent -  (int64_t)rcvd);
+  
+  return((s == 0) ? 0 : (d/s));
 }
 
 const char* ndpi_data_ratio2str(float ratio) {
