@@ -23,11 +23,58 @@
 #endif
 
 #include "third_party/include/ndpi_patricia.h"
-//#include "third_party/include/ht_hash.h"
+#include "third_party/include/ht_hash.h"
 
 #define NDPI_CONST_GENERIC_PROTOCOL_NAME  "GenericProtocol"
 
+// #define MATCH_DEBUG 1
+
+/* implementation of the punycode check function */
+int ndpi_check_punycode_string(char * buffer , int len) {
+  int i = 0;
+
+  while(i++ < len) {
+    if((buffer[i] == 'x')
+       && (buffer[i+1] == 'n')
+       && (buffer[i+2] == '-')
+       && (buffer[i+3] == '-'))
+      // is a punycode string
+      return(1);
+  }
+
+  // not a punycode string
+  return 0;
+}
 /* ***************************************************** */
+/* **************************************** */
+
+u_int8_t ndpi_is_safe_ssl_cipher(u_int32_t cipher) {
+  /* https://community.qualys.com/thread/18212-how-does-qualys-determine-the-server-cipher-suites */
+  /* INSECURE */
+  switch(cipher) {
+  case 0xc011: return(NDPI_CIPHER_INSECURE); /* TLS_ECDHE_RSA_WITH_RC4_128_SHA */
+  case 0x0005: return(NDPI_CIPHER_INSECURE); /* TLS_RSA_WITH_RC4_128_SHA */
+  case 0x0004: return(NDPI_CIPHER_INSECURE); /* TLS_RSA_WITH_RC4_128_MD5 */
+    /* WEAK */
+  case 0x009d: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_256_GCM_SHA384 */
+  case 0x003d: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_256_CBC_SHA256 */
+  case 0x0035: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_256_CBC_SHA */
+  case 0x0084: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_CAMELLIA_256_CBC_SHA */
+  case 0x009c: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_128_GCM_SHA256 */
+  case 0x003c: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_128_CBC_SHA256 */
+  case 0x002f: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_AES_128_CBC_SHA */
+  case 0x0041: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_CAMELLIA_128_CBC_SHA */
+  case 0xc012: return(NDPI_CIPHER_WEAK); /* TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA */
+  case 0x0016: return(NDPI_CIPHER_WEAK); /* TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA */
+  case 0x000a: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_3DES_EDE_CBC_SHA */
+  case 0x0096: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_SEED_CBC_SHA */
+  case 0x0007: return(NDPI_CIPHER_WEAK); /* TLS_RSA_WITH_IDEA_CBC_SHA */
+  default:     return(NDPI_CIPHER_SAFE);
+  }
+}
+
+/* ***************************************************** */
+
 /* ******************************************************************** */
 
 static int ndpi_is_other_char(char c) {
@@ -346,6 +393,16 @@ const char* ndpi_tunnel2str(ndpi_packet_tunnel tt) {
 
   return("");
 }
+/*
+  /dv/vulnerabilities/xss_r/?name=%3Cscript%3Econsole.log%28%27JUL2D3WXHEGWRAFJE2PI7OS71Z4Z8RFUHXGNFLUFYVP6M3OL55%27%29%3Bconsole.log%28document.cookie%29%3B%3C%2Fscript%3E
+  /dv/vulnerabilities/sqli/?id=1%27+and+1%3D1+union+select+null%2C+table_name+from+information_schema.tables%23&Submit=Submit
+*/
+
+/* https://www.rosettacode.org/wiki/URL_decoding#C */
+static int ishex(int x) {
+  return(x >= '0' && x <= '9') || (x >= 'a' && x <= 'f') || (x >= 'A' && x <= 'F');
+}
+
 
 /* ********************************** */
 

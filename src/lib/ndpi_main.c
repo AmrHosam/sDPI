@@ -1836,6 +1836,18 @@ u_int16_t ndpi_network_ptree_match(struct ndpi_detection_module_struct *ndpi_str
 
 	return (node ? node->value.user_value : NDPI_PROTOCOL_UNKNOWN);
 }
+int NDPI_BITMASK_COMPARE(NDPI_PROTOCOL_BITMASK a, NDPI_PROTOCOL_BITMASK b)
+{
+	int i;
+
+	for (i = 0; i < NDPI_NUM_FDS_BITS; i++)
+	{
+		if (a.fds_bits[i] & b.fds_bits[i])
+			return (1);
+	}
+
+	return (0);
+}
 /**********************************************************/
 void check_ndpi_other_flow_func(struct ndpi_detection_module_struct *ndpi_str,
 								struct ndpi_flow_struct *flow,
@@ -2048,6 +2060,72 @@ u_int8_t ndpi_extra_dissection_possible(struct ndpi_detection_module_struct *ndp
 	}
 
 	return (0);
+}
+/* ********************************************************************************* */
+void ndpi_int_reset_protocol(struct ndpi_flow_struct *flow)
+{
+  if (flow)
+  {
+    int a;
+
+    for (a = 0; a < NDPI_PROTOCOL_SIZE; a++)
+      flow->detected_protocol_stack[a] = NDPI_PROTOCOL_UNKNOWN;
+  }
+}
+/* ******************************************************************** */
+
+/* LRU cache */
+struct ndpi_lru_cache *ndpi_lru_cache_init(u_int32_t num_entries)
+{
+  struct ndpi_lru_cache *c = (struct ndpi_lru_cache *)ndpi_malloc(sizeof(struct ndpi_lru_cache));
+
+  if (!c)
+    return (NULL);
+
+  c->entries = (struct ndpi_lru_cache_entry *)ndpi_calloc(num_entries,
+                                                          sizeof(struct ndpi_lru_cache_entry));
+
+  if (!c->entries)
+  {
+    ndpi_free(c);
+    return (NULL);
+  }
+  else
+    c->num_entries = num_entries;
+
+  return (c);
+}
+
+void ndpi_lru_free_cache(struct ndpi_lru_cache *c)
+{
+  ndpi_free(c->entries);
+  ndpi_free(c);
+}
+
+u_int8_t ndpi_lru_find_cache(struct ndpi_lru_cache *c, u_int32_t key, u_int16_t *value, u_int8_t clean_key_when_found)
+{
+  u_int32_t slot = key % c->num_entries;
+
+  if (c->entries[slot].is_full)
+  {
+    *value = c->entries[slot].value;
+    if (clean_key_when_found)
+      c->entries[slot].is_full = 0;
+    return (1);
+  }
+  else
+    return (0);
+}
+
+
+/***************************************************** */
+void ndpi_lru_add_to_cache(struct ndpi_lru_cache *c, u_int32_t key, u_int16_t value)
+{
+  u_int32_t slot = key % c->num_entries;
+
+  c->entries[slot].is_full = 1,
+  c->entries[slot].key = key,
+  c->entries[slot].value = value;
 }
 
 /* ******************************************************************** */
@@ -2685,6 +2763,20 @@ static u_int16_t ndpi_automa_match_string_subprotocol(struct ndpi_detection_modu
 }
 
 /* ****************************************************** */
+/* ****************************************************** */
+
+u_int16_t ndpi_match_content_subprotocol(struct ndpi_detection_module_struct *ndpi_str,
+                                         struct ndpi_flow_struct *flow,
+                                         char *string_to_match, u_int string_to_match_len,
+                                         ndpi_protocol_match_result *ret_match,
+                                         u_int16_t master_protocol_id)
+{
+  return (ndpi_automa_match_string_subprotocol(ndpi_str, flow,
+                                               string_to_match, string_to_match_len,
+                                               master_protocol_id, ret_match, 0));
+}
+
+
 /* *********************************************** */
 
 int ndpi_get_custom_category_match(struct ndpi_detection_module_struct *ndpi_str,
@@ -2882,6 +2974,121 @@ ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_st
 static void free_ptree_data(void *data) { ; }
 
 /* ****************************************************** */
+/* ********************************************************************************* */
+
+int ndpi_load_hostname_category(struct ndpi_detection_module_struct *ndpi_str,
+								const char *name_to_add, ndpi_protocol_category_t category)
+{
+	char *name;
+
+	if (name_to_add == NULL)
+		return (-1);
+
+	name = ndpi_strdup(name_to_add);
+
+	if (name == NULL)
+		return (-1);
+
+#if 0
+  printf("===> %s() Loading %s as %u\n", __FUNCTION__, name, category);
+#endif
+
+#ifdef HAVE_HYPERSCAN
+	{
+		struct hs_list *h = (struct hs_list *)ndpi_malloc(sizeof(struct hs_list));
+
+		if (h)
+		{
+			h->expression = name, h->id = (unsigned int)category;
+			h->next = ndpi_str->custom_categories.to_load;
+			ndpi_str->custom_categories.to_load = h;
+			ndpi_str->custom_categories.num_to_load++;
+		}
+		else
+		{
+			free(name);
+			return (-1);
+		}
+	}
+#else
+	AC_PATTERN_t ac_pattern;
+
+	memset(&ac_pattern, 0, sizeof(ac_pattern));
+
+	if (ndpi_str->custom_categories.hostnames_shadow.ac_automa == NULL)
+	{
+		free(name);
+		return (-1);
+	}
+
+	ac_pattern.astring = name, ac_pattern.length = strlen(ac_pattern.astring);
+	ac_pattern.rep.number = (int)category;
+
+	if (ac_automata_add(ndpi_str->custom_categories.hostnames_shadow.ac_automa, &ac_pattern) != ACERR_SUCCESS)
+	{
+		free(name);
+		return (-1);
+	}
+#endif
+
+	return (0);
+}
+
+/* ********************************************************************************* */
+/* ********************************************************************************* */
+
+int ndpi_load_ip_category(struct ndpi_detection_module_struct *ndpi_str,
+                          const char *ip_address_and_mask, ndpi_protocol_category_t category)
+{
+  patricia_node_t *node;
+  struct in_addr pin;
+  int bits = 32;
+  char *ptr;
+  char ipbuf[64];
+
+  strncpy(ipbuf, ip_address_and_mask, sizeof(ipbuf));
+  ipbuf[sizeof(ipbuf) - 1] = '\0';
+
+  ptr = strrchr(ipbuf, '/');
+
+  if (ptr)
+  {
+    *(ptr++) = '\0';
+    if (atoi(ptr) >= 0 && atoi(ptr) <= 32)
+      bits = atoi(ptr);
+  }
+
+  if (inet_pton(AF_INET, ipbuf, &pin) != 1)
+  {
+    NDPI_LOG_DBG2(ndpi_str, "Invalid ip/ip+netmask: %s\n", ip_address_and_mask);
+    return (-1);
+  }
+
+  if ((node = add_to_ptree(ndpi_str->custom_categories.ipAddresses_shadow,
+                           AF_INET, &pin, bits)) != NULL)
+    node->value.user_value = (int)category;
+  return (0);
+}
+
+/* ********************************************************************************* */
+
+/* Loads an IP or name category */
+int ndpi_load_category(struct ndpi_detection_module_struct *ndpi_struct,
+					   const char *ip_or_name, ndpi_protocol_category_t category)
+{
+	int rv;
+
+	/* Try to load as IP address first */
+	rv = ndpi_load_ip_category(ndpi_struct, ip_or_name, category);
+
+	if (rv < 0)
+	{
+		/* IP load failed, load as hostname */
+		rv = ndpi_load_hostname_category(ndpi_struct, ip_or_name, category);
+	}
+
+	return (rv);
+}
 
 /* ********************************************************************************* */
 
@@ -3202,6 +3409,57 @@ void ndpi_free_flow(struct ndpi_flow_struct *flow)
 }
 
 /* ****************************************************** */
+
+/*
+ * Find the first occurrence of find in s, where the search is limited to the
+ * first slen characters of s.
+ */
+char *ndpi_strnstr(const char *s, const char *find, size_t slen)
+{
+  char c;
+  size_t len;
+
+  if ((c = *find++) != '\0')
+  {
+    len = strnlen(find, slen);
+    do
+    {
+      char sc;
+
+      do
+      {
+        if (slen-- < 1 || (sc = *s++) == '\0')
+          return (NULL);
+      } while (sc != c);
+      if (len > slen)
+        return (NULL);
+    } while (strncmp(s, find, len) != 0);
+    s--;
+  }
+
+  return ((char *)s);
+}
+
+/* ****************************************************** */
+/* ******************************************* */
+
+u_int8_t ndpi_is_tor_flow(struct ndpi_detection_module_struct *ndpi_str,
+                          struct ndpi_flow_struct *flow)
+{
+  struct ndpi_packet_struct *packet = &flow->packet;
+
+  if (packet->tcp != NULL)
+  {
+    if (packet->iph)
+    {
+      if (flow->guessed_host_protocol_id == NDPI_PROTOCOL_TOR)
+        return (1);
+    }
+  }
+
+  return (0);
+}
+
 /* ******************************************************************** */
 
 u_int ndpi_get_num_supported_protocols(struct ndpi_detection_module_struct *ndpi_str)
@@ -3209,13 +3467,6 @@ u_int ndpi_get_num_supported_protocols(struct ndpi_detection_module_struct *ndpi
 	return (ndpi_str->ndpi_num_supported_protocols);
 }
 
-/* ******************************************************************** */
-
-void ndpi_lru_free_cache(struct ndpi_lru_cache *c)
-{
-	ndpi_free(c->entries);
-	ndpi_free(c);
-}
 
 void ndpi_exit_detection_module(struct ndpi_detection_module_struct *ndpi_str)
 {
@@ -3336,30 +3587,29 @@ char *ndpi_protocol2id(struct ndpi_detection_module_struct *ndpi_str,
 	return (buf);
 }
 
-
 u_int8_t ndpi_get_api_version()
 {
-  return (NDPI_API_VERSION);
+	return (NDPI_API_VERSION);
 }
 
 ndpi_proto_defaults_t *ndpi_get_proto_defaults(struct ndpi_detection_module_struct *ndpi_str)
 {
-  return (ndpi_str->proto_defaults);
+	return (ndpi_str->proto_defaults);
 }
 
 u_int ndpi_get_ndpi_num_supported_protocols(struct ndpi_detection_module_struct *ndpi_str)
 {
-  return (ndpi_str->ndpi_num_supported_protocols);
+	return (ndpi_str->ndpi_num_supported_protocols);
 }
 
 u_int ndpi_get_ndpi_num_custom_protocols(struct ndpi_detection_module_struct *ndpi_str)
 {
-  return (ndpi_str->ndpi_num_custom_protocols);
+	return (ndpi_str->ndpi_num_custom_protocols);
 }
 
 u_int ndpi_get_ndpi_detection_module_size()
 {
-  return (sizeof(struct ndpi_detection_module_struct));
+	return (sizeof(struct ndpi_detection_module_struct));
 }
 
 ndpi_protocol_breed_t ndpi_get_proto_breed(struct ndpi_detection_module_struct *ndpi_str,
@@ -3397,41 +3647,361 @@ ndpi_protocol_breed_t ndpi_get_proto_breed(struct ndpi_detection_module_struct *
   changing the datastructures while using them
 */
 static int removeDefaultPort(ndpi_port_range *range,
-                             ndpi_proto_defaults_t *def,
-                             ndpi_default_ports_tree_node_t **root)
+							 ndpi_proto_defaults_t *def,
+							 ndpi_default_ports_tree_node_t **root)
 {
-  ndpi_default_ports_tree_node_t node;
-  u_int16_t port;
+	ndpi_default_ports_tree_node_t node;
+	u_int16_t port;
 
-  for (port = range->port_low; port <= range->port_high; port++)
+	for (port = range->port_low; port <= range->port_high; port++)
+	{
+		ndpi_default_ports_tree_node_t *ret;
+
+		node.proto = def, node.default_port = port;
+		ret = (ndpi_default_ports_tree_node_t *)ndpi_tdelete(&node, (void *)root,
+															 ndpi_default_ports_tree_node_t_cmp); /* Add it to the tree */
+
+		if (ret != NULL)
+		{
+			ndpi_free((ndpi_default_ports_tree_node_t *)ret);
+			return (0);
+		}
+	}
+
+	return (-1);
+}
+/* ****************************************************** */
+
+int ndpi_match_bigram(struct ndpi_detection_module_struct *ndpi_str,
+					  ndpi_automa *automa, char *bigram_to_match)
+{
+	AC_TEXT_t ac_input_text;
+	AC_REP_t match = {NDPI_PROTOCOL_UNKNOWN, NDPI_PROTOCOL_CATEGORY_UNSPECIFIED, NDPI_PROTOCOL_UNRATED};
+	int rc;
+
+	if ((automa->ac_automa == NULL) || (bigram_to_match == NULL))
+		return (-1);
+
+	if (!automa->ac_automa_finalized)
+	{
+		printf("[%s:%d] [NDPI] Internal error: please call ndpi_finalize_initalization()\n", __FILE__, __LINE__);
+		return (0); /* No matches */
+	}
+
+	ac_input_text.astring = bigram_to_match, ac_input_text.length = 2;
+	rc = ac_automata_search(((AC_AUTOMATA_t *)automa->ac_automa), &ac_input_text, &match);
+
+	/*
+    As ac_automata_search can detect partial matches and continue the search process
+    in case rc == 0 (i.e. no match), we need to check if there is a partial match
+    and in this case return it
+  */
+	if ((rc == 0) && (match.number != 0))
+		rc = 1;
+
+	return (rc ? match.number : 0);
+}
+
+/* ****************************************************** */
+void ndpi_exclude_protocol(struct ndpi_detection_module_struct *ndpi_str,
+                           struct ndpi_flow_struct *flow,
+                           u_int16_t protocol_id,
+                           const char *_file, const char *_func, int _line)
+{
+  if (protocol_id < NDPI_MAX_SUPPORTED_PROTOCOLS + NDPI_MAX_NUM_CUSTOM_PROTOCOLS)
   {
-    ndpi_default_ports_tree_node_t *ret;
-
-    node.proto = def, node.default_port = port;
-    ret = (ndpi_default_ports_tree_node_t *)ndpi_tdelete(&node, (void *)root,
-                                                         ndpi_default_ports_tree_node_t_cmp); /* Add it to the tree */
-
-    if (ret != NULL)
+#ifdef NDPI_ENABLE_DEBUG_MESSAGES
+    if (ndpi_str &&
+        ndpi_str->ndpi_log_level >= NDPI_LOG_DEBUG &&
+        ndpi_str->ndpi_debug_printf != NULL)
     {
-      ndpi_free((ndpi_default_ports_tree_node_t *)ret);
-      return (0);
+
+      (*(ndpi_str->ndpi_debug_printf))(protocol_id, ndpi_str, NDPI_LOG_DEBUG,
+                                       _file, _func, _line, "exclude %s\n", ndpi_get_proto_name(ndpi_str, protocol_id));
+    }
+#endif
+    NDPI_ADD_PROTOCOL_TO_BITMASK(flow->excluded_protocol_bitmask, protocol_id);
+  }
+}
+
+/* ********************************************************************************** */
+/* ********************************************************************************* */
+
+/* internal function for every detection to parse one packet and to increase the info buffer */
+void ndpi_parse_packet_line_info(struct ndpi_detection_module_struct *ndpi_str,
+                                 struct ndpi_flow_struct *flow)
+{
+  u_int32_t a;
+  struct ndpi_packet_struct *packet = &flow->packet;
+
+  if (packet->packet_lines_parsed_complete != 0)
+    return;
+
+  packet->packet_lines_parsed_complete = 1;
+  ndpi_reset_packet_line_info(packet);
+
+  if ((packet->payload_packet_len < 3) || (packet->payload == NULL))
+    return;
+
+  packet->line[packet->parsed_lines].ptr = packet->payload;
+  packet->line[packet->parsed_lines].len = 0;
+
+  for (a = 0; (a < packet->payload_packet_len) && (packet->parsed_lines < NDPI_MAX_PARSE_LINES_PER_PACKET); a++)
+  {
+    if ((a + 1) == packet->payload_packet_len)
+      return; /* Return if only one byte remains (prevent invalid reads past end-of-buffer) */
+
+    if (get_u_int16_t(packet->payload, a) == ntohs(0x0d0a))
+    { /* If end of line char sequence CR+NL "\r\n", process line */
+      packet->line[packet->parsed_lines].len = (u_int16_t)(((unsigned long)&packet->payload[a]) - ((unsigned long)packet->line[packet->parsed_lines].ptr));
+
+      /* First line of a HTTP response parsing. Expected a "HTTP/1.? ???" */
+      if (packet->parsed_lines == 0 && packet->line[0].len >= NDPI_STATICSTRING_LEN("HTTP/1.X 200 ") &&
+          strncasecmp((const char *)packet->line[0].ptr, "HTTP/1.", NDPI_STATICSTRING_LEN("HTTP/1.")) == 0 &&
+          packet->line[0].ptr[NDPI_STATICSTRING_LEN("HTTP/1.X ")] > '0' && /* response code between 000 and 699 */
+          packet->line[0].ptr[NDPI_STATICSTRING_LEN("HTTP/1.X ")] < '6')
+      {
+        packet->http_response.ptr = &packet->line[0].ptr[NDPI_STATICSTRING_LEN("HTTP/1.1 ")];
+        packet->http_response.len = packet->line[0].len - NDPI_STATICSTRING_LEN("HTTP/1.1 ");
+        packet->http_num_headers++;
+
+        /* Set server HTTP response code */
+        if (packet->payload_packet_len >= 12)
+        {
+          char buf[4];
+
+          /* Set server HTTP response code */
+          strncpy(buf, (char *)&packet->payload[9], 3);
+          buf[3] = '\0';
+
+          flow->http.response_status_code = atoi(buf);
+          /* https://en.wikipedia.org/wiki/List_of_HTTP_status_codes */
+          if ((flow->http.response_status_code < 100) || (flow->http.response_status_code > 509))
+            flow->http.response_status_code = 0; /* Out of range */
+        }
+      }
+
+      /* "Server:" header line in HTTP response */
+      if (packet->line[packet->parsed_lines].len > NDPI_STATICSTRING_LEN("Server:") + 1 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Server:", NDPI_STATICSTRING_LEN("Server:")) == 0)
+      {
+        // some stupid clients omit a space and place the servername directly after the colon
+        if (packet->line[packet->parsed_lines].ptr[NDPI_STATICSTRING_LEN("Server:")] == ' ')
+        {
+          packet->server_line.ptr =
+              &packet->line[packet->parsed_lines].ptr[NDPI_STATICSTRING_LEN("Server:") + 1];
+          packet->server_line.len =
+              packet->line[packet->parsed_lines].len - (NDPI_STATICSTRING_LEN("Server:") + 1);
+        }
+        else
+        {
+          packet->server_line.ptr = &packet->line[packet->parsed_lines].ptr[NDPI_STATICSTRING_LEN("Server:")];
+          packet->server_line.len = packet->line[packet->parsed_lines].len - NDPI_STATICSTRING_LEN("Server:");
+        }
+        packet->http_num_headers++;
+      }
+      /* "Host:" header line in HTTP request */
+      if (packet->line[packet->parsed_lines].len > 6 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr,
+                                                                    "Host:", 5) == 0)
+      {
+        // some stupid clients omit a space and place the hostname directly after the colon
+        if (packet->line[packet->parsed_lines].ptr[5] == ' ')
+        {
+          packet->host_line.ptr = &packet->line[packet->parsed_lines].ptr[6];
+          packet->host_line.len = packet->line[packet->parsed_lines].len - 6;
+        }
+        else
+        {
+          packet->host_line.ptr = &packet->line[packet->parsed_lines].ptr[5];
+          packet->host_line.len = packet->line[packet->parsed_lines].len - 5;
+        }
+        packet->http_num_headers++;
+      }
+      /* "X-Forwarded-For:" header line in HTTP request. Commonly used for HTTP proxies. */
+      if (packet->line[packet->parsed_lines].len > 17 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "X-Forwarded-For:", 16) == 0)
+      {
+        // some stupid clients omit a space and place the hostname directly after the colon
+        if (packet->line[packet->parsed_lines].ptr[16] == ' ')
+        {
+          packet->forwarded_line.ptr = &packet->line[packet->parsed_lines].ptr[17];
+          packet->forwarded_line.len = packet->line[packet->parsed_lines].len - 17;
+        }
+        else
+        {
+          packet->forwarded_line.ptr = &packet->line[packet->parsed_lines].ptr[16];
+          packet->forwarded_line.len = packet->line[packet->parsed_lines].len - 16;
+        }
+        packet->http_num_headers++;
+      }
+      /* "Content-Type:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 14 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Content-Type: ", 14) == 0 || strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Content-type: ", 14) == 0))
+      {
+        packet->content_line.ptr = &packet->line[packet->parsed_lines].ptr[14];
+        packet->content_line.len = packet->line[packet->parsed_lines].len - 14;
+
+        while ((packet->content_line.len > 0) && (packet->content_line.ptr[0] == ' '))
+          packet->content_line.len--, packet->content_line.ptr++;
+
+        packet->http_num_headers++;
+      }
+      /* "Content-Type:" header line in HTTP AGAIN. Probably a bogus response without space after ":" */
+      if ((packet->content_line.len == 0) && (packet->line[packet->parsed_lines].len > 13) && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Content-type:", 13) == 0))
+      {
+        packet->content_line.ptr = &packet->line[packet->parsed_lines].ptr[13];
+        packet->content_line.len = packet->line[packet->parsed_lines].len - 13;
+        packet->http_num_headers++;
+      }
+
+      if (packet->content_line.len > 0)
+      {
+        /* application/json; charset=utf-8 */
+        char separator[] = {';', '\r', '\0'};
+        int i;
+
+        for (i = 0; separator[i] != '\0'; i++)
+        {
+          char *c = memchr((char *)packet->content_line.ptr, separator[i], packet->content_line.len);
+
+          if (c != NULL)
+            packet->content_line.len = c - (char *)packet->content_line.ptr;
+        }
+      }
+
+      /* "Accept:" header line in HTTP request. */
+      if (packet->line[packet->parsed_lines].len > 8 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Accept: ", 8) == 0)
+      {
+        packet->accept_line.ptr = &packet->line[packet->parsed_lines].ptr[8];
+        packet->accept_line.len = packet->line[packet->parsed_lines].len - 8;
+        packet->http_num_headers++;
+      }
+      /* "Referer:" header line in HTTP request. */
+      if (packet->line[packet->parsed_lines].len > 9 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Referer: ", 9) == 0)
+      {
+        packet->referer_line.ptr = &packet->line[packet->parsed_lines].ptr[9];
+        packet->referer_line.len = packet->line[packet->parsed_lines].len - 9;
+        packet->http_num_headers++;
+      }
+      /* "User-Agent:" header line in HTTP request. */
+      if (packet->line[packet->parsed_lines].len > 12 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "User-Agent: ", 12) == 0 || strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "User-agent: ", 12) == 0))
+      {
+        packet->user_agent_line.ptr = &packet->line[packet->parsed_lines].ptr[12];
+        packet->user_agent_line.len = packet->line[packet->parsed_lines].len - 12;
+        packet->http_num_headers++;
+      }
+      /* "Content-Encoding:" header line in HTTP response (and request?). */
+      if (packet->line[packet->parsed_lines].len > 18 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Content-Encoding: ", 18) == 0)
+      {
+        packet->http_encoding.ptr = &packet->line[packet->parsed_lines].ptr[18];
+        packet->http_encoding.len = packet->line[packet->parsed_lines].len - 18;
+        packet->http_num_headers++;
+      }
+      /* "Transfer-Encoding:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 19 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Transfer-Encoding: ", 19) == 0)
+      {
+        packet->http_transfer_encoding.ptr = &packet->line[packet->parsed_lines].ptr[19];
+        packet->http_transfer_encoding.len = packet->line[packet->parsed_lines].len - 19;
+        packet->http_num_headers++;
+      }
+      /* "Content-Length:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 16 && ((strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Content-Length: ", 16) == 0) || (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "content-length: ", 16) == 0)))
+      {
+        packet->http_contentlen.ptr = &packet->line[packet->parsed_lines].ptr[16];
+        packet->http_contentlen.len = packet->line[packet->parsed_lines].len - 16;
+        packet->http_num_headers++;
+      }
+      /* "Cookie:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 8 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Cookie: ", 8) == 0)
+      {
+        packet->http_cookie.ptr = &packet->line[packet->parsed_lines].ptr[8];
+        packet->http_cookie.len = packet->line[packet->parsed_lines].len - 8;
+        packet->http_num_headers++;
+      }
+      /* "Origin:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 8 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Origin: ", 8) == 0)
+      {
+        packet->http_origin.ptr = &packet->line[packet->parsed_lines].ptr[8];
+        packet->http_origin.len = packet->line[packet->parsed_lines].len - 8;
+        packet->http_num_headers++;
+      }
+      /* "X-Session-Type:" header line in HTTP. */
+      if (packet->line[packet->parsed_lines].len > 16 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "X-Session-Type: ", 16) == 0)
+      {
+        packet->http_x_session_type.ptr = &packet->line[packet->parsed_lines].ptr[16];
+        packet->http_x_session_type.len = packet->line[packet->parsed_lines].len - 16;
+        packet->http_num_headers++;
+      }
+      /* Identification and counting of other HTTP headers.
+       * We consider the most common headers, but there are many others,
+       * which can be seen at references below:
+       * - https://tools.ietf.org/html/rfc7230
+       * - https://en.wikipedia.org/wiki/List_of_HTTP_header_fields
+       */
+      if ((packet->line[packet->parsed_lines].len > 6 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Date: ", 6) == 0 ||
+                                                          strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Vary: ", 6) == 0 ||
+                                                          strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "ETag: ", 6) == 0)) ||
+          (packet->line[packet->parsed_lines].len > 8 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Pragma: ", 8) == 0) ||
+          (packet->line[packet->parsed_lines].len > 9 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Expires: ", 9) == 0) ||
+          (packet->line[packet->parsed_lines].len > 12 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Set-Cookie: ", 12) == 0 ||
+                                                           strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Keep-Alive: ", 12) == 0 ||
+                                                           strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Connection: ", 12) == 0)) ||
+          (packet->line[packet->parsed_lines].len > 15 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Last-Modified: ", 15) == 0 ||
+                                                           strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Accept-Ranges: ", 15) == 0)) ||
+          (packet->line[packet->parsed_lines].len > 17 && (strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Accept-Language: ", 17) == 0 ||
+                                                           strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Accept-Encoding: ", 17) == 0)) ||
+          (packet->line[packet->parsed_lines].len > 27 && strncasecmp((const char *)packet->line[packet->parsed_lines].ptr, "Upgrade-Insecure-Requests: ", 27) == 0))
+      {
+        /* Just count. In the future, if needed, this if can be splited to parse these headers */
+        packet->http_num_headers++;
+      }
+
+      if (packet->line[packet->parsed_lines].len == 0)
+      {
+        packet->empty_line_position = a;
+        packet->empty_line_position_set = 1;
+      }
+
+      if (packet->parsed_lines >= (NDPI_MAX_PARSE_LINES_PER_PACKET - 1))
+        return;
+
+      packet->parsed_lines++;
+      packet->line[packet->parsed_lines].ptr = &packet->payload[a + 2];
+      packet->line[packet->parsed_lines].len = 0;
+
+      a++; /* next char in the payload */
     }
   }
 
-  return (-1);
+  if (packet->parsed_lines >= 1)
+  {
+    packet->line[packet->parsed_lines].len = (u_int16_t)(((unsigned long)&packet->payload[packet->payload_packet_len]) -
+                                                         ((unsigned long)packet->line[packet->parsed_lines].ptr));
+    packet->parsed_lines++;
+  }
 }
+
+/* ********************************************************************************* */
+/* *********************************************************************************** */
+
+char *ndpi_get_proto_by_id(struct ndpi_detection_module_struct *ndpi_str, u_int id)
+{
+  return ((id >= ndpi_str->ndpi_num_supported_protocols) ? NULL : ndpi_str->proto_defaults[id].protoName);
+}
+
 /* ****************************************************** */
+void set_ndpi_flow_malloc(void *(*__ndpi_flow_malloc)(size_t size)) { _ndpi_flow_malloc = __ndpi_flow_malloc; }
+
+void set_ndpi_free(void (*__ndpi_free)(void *ptr)) { _ndpi_free = __ndpi_free; }
+void set_ndpi_flow_free(void (*__ndpi_flow_free)(void *ptr)) { _ndpi_flow_free = __ndpi_flow_free; }
 /* *********************************************************************************** */
 
 u_int16_t ndpi_get_proto_by_name(struct ndpi_detection_module_struct *ndpi_str, const char *name)
 {
-  u_int16_t i, num = ndpi_get_num_supported_protocols(ndpi_str);
+	u_int16_t i, num = ndpi_get_num_supported_protocols(ndpi_str);
 
-  for (i = 0; i < num; i++)
-    if (strcasecmp(ndpi_get_proto_by_id(ndpi_str, i), name) == 0)
-      return (i);
+	for (i = 0; i < num; i++)
+		if (strcasecmp(ndpi_get_proto_by_id(ndpi_str, i), name) == 0)
+			return (i);
 
-  return (NDPI_PROTOCOL_UNKNOWN);
+	return (NDPI_PROTOCOL_UNKNOWN);
 }
 
 /* ************************************************************************************* */
@@ -3443,242 +4013,240 @@ u_int16_t ndpi_get_proto_by_name(struct ndpi_detection_module_struct *ndpi_str, 
   changing the datastructures while using them
 */
 static int ndpi_remove_host_url_subprotocol(struct ndpi_detection_module_struct *ndpi_str,
-                                            char *value, int protocol_id)
+											char *value, int protocol_id)
 {
-  NDPI_LOG_ERR(ndpi_str, "[NDPI] Missing implementation for proto %s/%d\n", value, protocol_id);
-  return (-1);
+	NDPI_LOG_ERR(ndpi_str, "[NDPI] Missing implementation for proto %s/%d\n", value, protocol_id);
+	return (-1);
 }
 
 /* ****************************************************** */
 static int ndpi_add_host_ip_subprotocol(struct ndpi_detection_module_struct *ndpi_str,
-                                        char *value, int protocol_id)
+										char *value, int protocol_id)
 {
 
-  patricia_node_t *node;
-  struct in_addr pin;
-  int bits = 32;
-  char *ptr = strrchr(value, '/');
+	patricia_node_t *node;
+	struct in_addr pin;
+	int bits = 32;
+	char *ptr = strrchr(value, '/');
 
-  if (ptr)
-  {
-    ptr[0] = '\0';
-    ptr++;
-    if (atoi(ptr) >= 0 && atoi(ptr) <= 32)
-      bits = atoi(ptr);
-  }
+	if (ptr)
+	{
+		ptr[0] = '\0';
+		ptr++;
+		if (atoi(ptr) >= 0 && atoi(ptr) <= 32)
+			bits = atoi(ptr);
+	}
 
-  inet_pton(AF_INET, value, &pin);
+	inet_pton(AF_INET, value, &pin);
 
-  if ((node = add_to_ptree(ndpi_str->protocols_ptree, AF_INET, &pin, bits)) != NULL)
-    node->value.user_value = protocol_id;
+	if ((node = add_to_ptree(ndpi_str->protocols_ptree, AF_INET, &pin, bits)) != NULL)
+		node->value.user_value = protocol_id;
 
-  return (0);
+	return (0);
 }
 
 int ndpi_handle_rule(struct ndpi_detection_module_struct *ndpi_str,
-                     char *rule, u_int8_t do_add)
+					 char *rule, u_int8_t do_add)
 {
-  char *at, *proto, *elem;
-  ndpi_proto_defaults_t *def;
-  int subprotocol_id, i;
+	char *at, *proto, *elem;
+	ndpi_proto_defaults_t *def;
+	int subprotocol_id, i;
 
-  at = strrchr(rule, '@');
-  if (at == NULL)
-  {
-    NDPI_LOG_ERR(ndpi_str, "Invalid rule '%s'\n", rule);
-    return (-1);
-  }
-  else
-    at[0] = 0, proto = &at[1];
+	at = strrchr(rule, '@');
+	if (at == NULL)
+	{
+		NDPI_LOG_ERR(ndpi_str, "Invalid rule '%s'\n", rule);
+		return (-1);
+	}
+	else
+		at[0] = 0, proto = &at[1];
 
-  for (i = 0; proto[i] != '\0'; i++)
-  {
-    switch (proto[i])
-    {
-    case '/':
-    case '&':
-    case '^':
-    case ':':
-    case ';':
-    case '\'':
-    case '"':
-    case ' ':
-      proto[i] = '_';
-      break;
-    }
-  }
+	for (i = 0; proto[i] != '\0'; i++)
+	{
+		switch (proto[i])
+		{
+		case '/':
+		case '&':
+		case '^':
+		case ':':
+		case ';':
+		case '\'':
+		case '"':
+		case ' ':
+			proto[i] = '_';
+			break;
+		}
+	}
 
-  for (i = 0, def = NULL; i < (int)ndpi_str->ndpi_num_supported_protocols; i++)
-  {
-    if (ndpi_str->proto_defaults[i].protoName && strcasecmp(ndpi_str->proto_defaults[i].protoName, proto) == 0)
-    {
-      def = &ndpi_str->proto_defaults[i];
-      subprotocol_id = i;
-      break;
-    }
-  }
+	for (i = 0, def = NULL; i < (int)ndpi_str->ndpi_num_supported_protocols; i++)
+	{
+		if (ndpi_str->proto_defaults[i].protoName && strcasecmp(ndpi_str->proto_defaults[i].protoName, proto) == 0)
+		{
+			def = &ndpi_str->proto_defaults[i];
+			subprotocol_id = i;
+			break;
+		}
+	}
 
-  if (def == NULL)
-  {
-    if (!do_add)
-    {
-      /* We need to remove a rule */
-      NDPI_LOG_ERR(ndpi_str, "Unable to find protocol '%s': skipping rule '%s'\n", proto, rule);
-      return (-3);
-    }
-    else
-    {
-      ndpi_port_range ports_a[MAX_DEFAULT_PORTS], ports_b[MAX_DEFAULT_PORTS];
-      u_int16_t no_master[2] = {NDPI_PROTOCOL_NO_MASTER_PROTO, NDPI_PROTOCOL_NO_MASTER_PROTO};
+	if (def == NULL)
+	{
+		if (!do_add)
+		{
+			/* We need to remove a rule */
+			NDPI_LOG_ERR(ndpi_str, "Unable to find protocol '%s': skipping rule '%s'\n", proto, rule);
+			return (-3);
+		}
+		else
+		{
+			ndpi_port_range ports_a[MAX_DEFAULT_PORTS], ports_b[MAX_DEFAULT_PORTS];
+			u_int16_t no_master[2] = {NDPI_PROTOCOL_NO_MASTER_PROTO, NDPI_PROTOCOL_NO_MASTER_PROTO};
 
-      if (ndpi_str->ndpi_num_custom_protocols >= (NDPI_MAX_NUM_CUSTOM_PROTOCOLS - 1))
-      {
-        NDPI_LOG_ERR(ndpi_str, "Too many protocols defined (%u): skipping protocol %s\n",
-                     ndpi_str->ndpi_num_custom_protocols, proto);
-        return (-2);
-      }
+			if (ndpi_str->ndpi_num_custom_protocols >= (NDPI_MAX_NUM_CUSTOM_PROTOCOLS - 1))
+			{
+				NDPI_LOG_ERR(ndpi_str, "Too many protocols defined (%u): skipping protocol %s\n",
+							 ndpi_str->ndpi_num_custom_protocols, proto);
+				return (-2);
+			}
 
-      ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE,
-                              ndpi_str->ndpi_num_supported_protocols,
-                              0 /* can_have_a_subprotocol */, no_master,
-                              no_master,
-                              proto,
-                              NDPI_PROTOCOL_CATEGORY_UNSPECIFIED, /* TODO add protocol category support in rules */
-                              ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
-                              ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
-      def = &ndpi_str->proto_defaults[ndpi_str->ndpi_num_supported_protocols];
-      subprotocol_id = ndpi_str->ndpi_num_supported_protocols;
-      ndpi_str->ndpi_num_supported_protocols++, ndpi_str->ndpi_num_custom_protocols++;
-    }
-  }
+			ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE,
+									ndpi_str->ndpi_num_supported_protocols,
+									0 /* can_have_a_subprotocol */, no_master,
+									no_master,
+									proto,
+									NDPI_PROTOCOL_CATEGORY_UNSPECIFIED, /* TODO add protocol category support in rules */
+									ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+									ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+			def = &ndpi_str->proto_defaults[ndpi_str->ndpi_num_supported_protocols];
+			subprotocol_id = ndpi_str->ndpi_num_supported_protocols;
+			ndpi_str->ndpi_num_supported_protocols++, ndpi_str->ndpi_num_custom_protocols++;
+		}
+	}
 
-  while ((elem = strsep(&rule, ",")) != NULL)
-  {
-    char *attr = elem, *value = NULL;
-    ndpi_port_range range;
-    int is_tcp = 0, is_udp = 0, is_ip = 0;
+	while ((elem = strsep(&rule, ",")) != NULL)
+	{
+		char *attr = elem, *value = NULL;
+		ndpi_port_range range;
+		int is_tcp = 0, is_udp = 0, is_ip = 0;
 
-    if (strncmp(attr, "tcp:", 4) == 0)
-      is_tcp = 1, value = &attr[4];
-    else if (strncmp(attr, "udp:", 4) == 0)
-      is_udp = 1, value = &attr[4];
-    else if (strncmp(attr, "ip:", 3) == 0)
-      is_ip = 1, value = &attr[3];
-    else if (strncmp(attr, "host:", 5) == 0)
-    {
-      /* host:"<value>",host:"<value>",.....@<subproto> */
-      value = &attr[5];
-      if (value[0] == '"')
-        value++; /* remove leading " */
-      if (value[strlen(value) - 1] == '"')
-        value[strlen(value) - 1] = '\0'; /* remove trailing " */
-    }
+		if (strncmp(attr, "tcp:", 4) == 0)
+			is_tcp = 1, value = &attr[4];
+		else if (strncmp(attr, "udp:", 4) == 0)
+			is_udp = 1, value = &attr[4];
+		else if (strncmp(attr, "ip:", 3) == 0)
+			is_ip = 1, value = &attr[3];
+		else if (strncmp(attr, "host:", 5) == 0)
+		{
+			/* host:"<value>",host:"<value>",.....@<subproto> */
+			value = &attr[5];
+			if (value[0] == '"')
+				value++; /* remove leading " */
+			if (value[strlen(value) - 1] == '"')
+				value[strlen(value) - 1] = '\0'; /* remove trailing " */
+		}
 
-    if (is_tcp || is_udp)
-    {
-      u_int p_low, p_high;
+		if (is_tcp || is_udp)
+		{
+			u_int p_low, p_high;
 
-      if (sscanf(value, "%u-%u", &p_low, &p_high) == 2)
-        range.port_low = p_low, range.port_high = p_high;
-      else
-        range.port_low = range.port_high = atoi(&elem[4]);
+			if (sscanf(value, "%u-%u", &p_low, &p_high) == 2)
+				range.port_low = p_low, range.port_high = p_high;
+			else
+				range.port_low = range.port_high = atoi(&elem[4]);
 
-      if (do_add)
-        addDefaultPort(ndpi_str, &range, def, 1 /* Custom user proto */,
-                       is_tcp ? &ndpi_str->tcpRoot : &ndpi_str->udpRoot, __FUNCTION__, __LINE__);
-      else
-        removeDefaultPort(&range, def, is_tcp ? &ndpi_str->tcpRoot : &ndpi_str->udpRoot);
-    }
-    else if (is_ip)
-    {
-      /* NDPI_PROTOCOL_TOR */
-      ndpi_add_host_ip_subprotocol(ndpi_str, value, subprotocol_id);
-    }
-    else
-    {
-      if (do_add)
-        ndpi_add_host_url_subprotocol(ndpi_str, value, subprotocol_id,
-                                      NDPI_PROTOCOL_CATEGORY_UNSPECIFIED,
-                                      NDPI_PROTOCOL_ACCEPTABLE);
-      else
-        ndpi_remove_host_url_subprotocol(ndpi_str, value, subprotocol_id);
-    }
-  }
+			if (do_add)
+				addDefaultPort(ndpi_str, &range, def, 1 /* Custom user proto */,
+							   is_tcp ? &ndpi_str->tcpRoot : &ndpi_str->udpRoot, __FUNCTION__, __LINE__);
+			else
+				removeDefaultPort(&range, def, is_tcp ? &ndpi_str->tcpRoot : &ndpi_str->udpRoot);
+		}
+		else if (is_ip)
+		{
+			/* NDPI_PROTOCOL_TOR */
+			ndpi_add_host_ip_subprotocol(ndpi_str, value, subprotocol_id);
+		}
+		else
+		{
+			if (do_add)
+				ndpi_add_host_url_subprotocol(ndpi_str, value, subprotocol_id,
+											  NDPI_PROTOCOL_CATEGORY_UNSPECIFIED,
+											  NDPI_PROTOCOL_ACCEPTABLE);
+			else
+				ndpi_remove_host_url_subprotocol(ndpi_str, value, subprotocol_id);
+		}
+	}
 
-  return (0);
+	return (0);
 }
-
 
 int ndpi_load_protocols_file(struct ndpi_detection_module_struct *ndpi_str, const char *path)
 {
-  FILE *fd;
-  char *buffer, *old_buffer;
-  int chunk_len = 512, buffer_len = chunk_len, old_buffer_len;
-  int i, rc = -1;
+	FILE *fd;
+	char *buffer, *old_buffer;
+	int chunk_len = 512, buffer_len = chunk_len, old_buffer_len;
+	int i, rc = -1;
 
-  fd = fopen(path, "r");
+	fd = fopen(path, "r");
 
-  if (fd == NULL)
-  {
-    NDPI_LOG_ERR(ndpi_str, "Unable to open file %s [%s]\n", path, strerror(errno));
-    goto error;
-  }
+	if (fd == NULL)
+	{
+		NDPI_LOG_ERR(ndpi_str, "Unable to open file %s [%s]\n", path, strerror(errno));
+		goto error;
+	}
 
-  buffer = ndpi_malloc(buffer_len);
+	buffer = ndpi_malloc(buffer_len);
 
-  if (buffer == NULL)
-  {
-    NDPI_LOG_ERR(ndpi_str, "Memory allocation failure\n");
-    goto close_fd;
-  }
+	if (buffer == NULL)
+	{
+		NDPI_LOG_ERR(ndpi_str, "Memory allocation failure\n");
+		goto close_fd;
+	}
 
-  while (1)
-  {
-    char *line = buffer;
-    int line_len = buffer_len;
+	while (1)
+	{
+		char *line = buffer;
+		int line_len = buffer_len;
 
-    while ((line = fgets(line, line_len, fd)) != NULL && line[strlen(line) - 1] != '\n')
-    {
-      i = strlen(line);
-      old_buffer = buffer;
-      old_buffer_len = buffer_len;
-      buffer_len += chunk_len;
+		while ((line = fgets(line, line_len, fd)) != NULL && line[strlen(line) - 1] != '\n')
+		{
+			i = strlen(line);
+			old_buffer = buffer;
+			old_buffer_len = buffer_len;
+			buffer_len += chunk_len;
 
-      buffer = ndpi_realloc(old_buffer, old_buffer_len, buffer_len);
+			buffer = ndpi_realloc(old_buffer, old_buffer_len, buffer_len);
 
-      if (buffer == NULL)
-      {
-        NDPI_LOG_ERR(ndpi_str, "Memory allocation failure\n");
-        ndpi_free(old_buffer);
-        goto close_fd;
-      }
+			if (buffer == NULL)
+			{
+				NDPI_LOG_ERR(ndpi_str, "Memory allocation failure\n");
+				ndpi_free(old_buffer);
+				goto close_fd;
+			}
 
-      line = &buffer[i];
-      line_len = chunk_len;
-    }
+			line = &buffer[i];
+			line_len = chunk_len;
+		}
 
-    if (!line) /* safety check */
-      break;
+		if (!line) /* safety check */
+			break;
 
-    i = strlen(buffer);
-    if ((i <= 1) || (buffer[0] == '#'))
-      continue;
-    else
-      buffer[i - 1] = '\0';
+		i = strlen(buffer);
+		if ((i <= 1) || (buffer[0] == '#'))
+			continue;
+		else
+			buffer[i - 1] = '\0';
 
-    ndpi_handle_rule(ndpi_str, buffer, 1);
-  }
+		ndpi_handle_rule(ndpi_str, buffer, 1);
+	}
 
-  rc = 0;
+	rc = 0;
 
-  ndpi_free(buffer);
+	ndpi_free(buffer);
 
 close_fd:
-  fclose(fd);
+	fclose(fd);
 
 error:
-  return (rc);
+	return (rc);
 }
 
 /* ******************************************************************** */
-
