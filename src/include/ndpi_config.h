@@ -11,7 +11,7 @@
 #define HAVE_INTTYPES_H 1
 
 /* The JSON-C library is present */
-#define HAVE_JSON_C 1
+/* #undef HAVE_JSON_C */
 
 /* Define to 1 if you have the `m' library (-lm). */
 /* #undef HAVE_LIBM */
@@ -56,10 +56,10 @@
 /* #undef NDPI_ENABLE_DEBUG_MESSAGES */
 
 /* Last GIT change */
-#define NDPI_GIT_DATE "Wed Feb 5 14:50:58 2020 +0200"
+#define NDPI_GIT_DATE "Wed Feb 5 15:12:11 2020 +0200"
 
 /* GIT Release */
-#define NDPI_GIT_RELEASE "3.1.0-118-ff0533f"
+#define NDPI_GIT_RELEASE "3.1.0-120-31d4921"
 
 /* nDPI major release */
 #define NDPI_MAJOR_RELEASE "3"
