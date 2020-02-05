@@ -271,7 +271,11 @@ ECHO_T =
 EGREP = /bin/grep -E
 EXEEXT = 
 FGREP = /bin/grep -F
+<<<<<<< HEAD
 GIT_RELEASE = 3.1.0-111-5c413a9
+=======
+GIT_RELEASE = 3.1.0-112-11b1596
+>>>>>>> c7d086af620d30740ab4cc98fffee4db61acc206
 GREP = /bin/grep
 HAVE_PTHREAD_SETAFFINITY_NP = 
 HS_CFLAGS = 

@@ -56,10 +56,17 @@
 /* #undef NDPI_ENABLE_DEBUG_MESSAGES */
 
 /* Last GIT change */
+<<<<<<< HEAD
 #define NDPI_GIT_DATE "Tue Feb 4 10:41:15 2020 +0200"
 
 /* GIT Release */
 #define NDPI_GIT_RELEASE "3.1.0-111-5c413a9"
+=======
+#define NDPI_GIT_DATE "Wed Feb 5 12:22:18 2020 +0200"
+
+/* GIT Release */
+#define NDPI_GIT_RELEASE "3.1.0-112-11b1596"
+>>>>>>> c7d086af620d30740ab4cc98fffee4db61acc206
 
 /* nDPI major release */
 #define NDPI_MAJOR_RELEASE "3"

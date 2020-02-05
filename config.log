@@ -583,8 +583,13 @@ configure: failed program was:
 | #define NDPI_MAJOR_RELEASE "3"
 | #define NDPI_MINOR_RELEASE "1"
 | #define NDPI_PATCH_LEVEL "0"
+<<<<<<< HEAD
 | #define NDPI_GIT_RELEASE "3.1.0-111-5c413a9"
 | #define NDPI_GIT_DATE "Tue Feb 4 10:41:15 2020 +0200"
+=======
+| #define NDPI_GIT_RELEASE "3.1.0-112-11b1596"
+| #define NDPI_GIT_DATE "Wed Feb 5 12:22:18 2020 +0200"
+>>>>>>> c7d086af620d30740ab4cc98fffee4db61acc206
 | #define HAVE_NETINET_IN_H 1
 | #define HAVE_STDINT_H 1
 | #define HAVE_STDLIB_H 1
@@ -838,7 +843,11 @@ ECHO_T=''
 EGREP='/bin/grep -E'
 EXEEXT=''
 FGREP='/bin/grep -F'
+<<<<<<< HEAD
 GIT_RELEASE='3.1.0-111-5c413a9'
+=======
+GIT_RELEASE='3.1.0-112-11b1596'
+>>>>>>> c7d086af620d30740ab4cc98fffee4db61acc206
 GREP='/bin/grep'
 HAS_FUZZLDFLAGS_FALSE=''
 HAS_FUZZLDFLAGS_TRUE='#'
@@ -977,8 +986,13 @@ target_alias=''
 #define NDPI_MAJOR_RELEASE "3"
 #define NDPI_MINOR_RELEASE "1"
 #define NDPI_PATCH_LEVEL "0"
+<<<<<<< HEAD
 #define NDPI_GIT_RELEASE "3.1.0-111-5c413a9"
 #define NDPI_GIT_DATE "Tue Feb 4 10:41:15 2020 +0200"
+=======
+#define NDPI_GIT_RELEASE "3.1.0-112-11b1596"
+#define NDPI_GIT_DATE "Wed Feb 5 12:22:18 2020 +0200"
+>>>>>>> c7d086af620d30740ab4cc98fffee4db61acc206
 #define HAVE_NETINET_IN_H 1
 #define HAVE_STDINT_H 1
 #define HAVE_STDLIB_H 1
