@@ -20,8 +20,8 @@ LIBNDPI = $(PWD)/../src/lib/libndpi.a
 SRCS-y := reader_util.c ndpiReader.c
 
 CFLAGS += -g
-CFLAGS += -Wno-strict-prototypes -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-parameter -I $(PWD)/../src/include -g -O2 -I/usr/include/json-c -DUSE_DPDK
-LDLIBS = $(LIBNDPI) -lpcap -lpthread  -ljson-c
+CFLAGS += -Wno-strict-prototypes -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-parameter -I $(PWD)/../src/include -g -O2 -DUSE_DPDK
+LDLIBS = $(LIBNDPI) -lpcap -lpthread 
 
 include $(RTE_SDK)/mk/rte.extapp.mk
 
