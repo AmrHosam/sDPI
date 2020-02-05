@@ -720,7 +720,7 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
 
   snprintf(flow->host_server_name, sizeof(flow->host_server_name), "%s",
            flow->ndpi_flow->host_server_name);
-
+/*
   if (is_ndpi_proto(flow, NDPI_PROTOCOL_DHCP))
   {
     snprintf(flow->dhcp_fingerprint, sizeof(flow->dhcp_fingerprint), "%s", flow->ndpi_flow->protos.dhcp.fingerprint);
@@ -740,18 +740,19 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
     if (n == 0)
       flow->bittorent_hash[0] = '\0';
   }
-  /* MDNS */
+  /* MDNS 
   else if (is_ndpi_proto(flow, NDPI_PROTOCOL_MDNS))
   {
     snprintf(flow->info, sizeof(flow->info), "%s", flow->ndpi_flow->protos.mdns.answer);
   }
   /* UBNTAC2 */
+  /*
   else if (is_ndpi_proto(flow, NDPI_PROTOCOL_UBNTAC2))
   {
     snprintf(flow->info, sizeof(flow->info), "%s", flow->ndpi_flow->protos.ubntac2.version);
   }
-  /* FTP */
-  else if ((is_ndpi_proto(flow, NDPI_PROTOCOL_FTP_CONTROL)) || /* IMAP */ is_ndpi_proto(flow, NDPI_PROTOCOL_MAIL_IMAP) || /* POP */ is_ndpi_proto(flow, NDPI_PROTOCOL_MAIL_POP) || /* SMTP */ is_ndpi_proto(flow, NDPI_PROTOCOL_MAIL_SMTP))
+  /* FTP 
+   if ((is_ndpi_proto(flow, NDPI_PROTOCOL_FTP_CONTROL)) )
   {
     if (flow->ndpi_flow->protos.ftp_imap_pop_smtp.username[0] != '\0')
       snprintf(flow->info, sizeof(flow->info), "User: %s][Pwd: %s%s",
@@ -759,7 +760,9 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
                flow->ndpi_flow->protos.ftp_imap_pop_smtp.password,
                flow->ndpi_flow->protos.ftp_imap_pop_smtp.auth_failed ? "][Auth Failed" : "");
   }
+  
   /* KERBEROS */
+  /*
   else if (is_ndpi_proto(flow, NDPI_PROTOCOL_KERBEROS))
   {
     if ((flow->ndpi_flow->protos.kerberos.hostname[0] != '\0') || (flow->ndpi_flow->protos.kerberos.username[0] != '\0'))
@@ -770,7 +773,7 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
                flow->ndpi_flow->protos.kerberos.domain);
     }
   }
-  /* HTTP */
+  /* HTTP 
   else if ((flow->detected_protocol.master_protocol == NDPI_PROTOCOL_HTTP) || is_ndpi_proto(flow, NDPI_PROTOCOL_HTTP))
   {
     if (flow->ndpi_flow->http.url != NULL)
@@ -781,11 +784,14 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
       snprintf(flow->http.user_agent, sizeof(flow->http.user_agent), "%s", flow->ndpi_flow->http.user_agent ? flow->ndpi_flow->http.user_agent : "");
     }
   }
+  /*
   else if (is_ndpi_proto(flow, NDPI_PROTOCOL_TELNET))
   {
     snprintf(flow->telnet.username, sizeof(flow->telnet.username), "%s", flow->ndpi_flow->protos.telnet.username);
     snprintf(flow->telnet.password, sizeof(flow->telnet.password), "%s", flow->ndpi_flow->protos.telnet.password);
   }
+  */
+ /*
   else if (is_ndpi_proto(flow, NDPI_PROTOCOL_SSH))
   {
     snprintf(flow->ssh_tls.client_info, sizeof(flow->ssh_tls.client_info), "%s",
@@ -798,7 +804,7 @@ void process_ndpi_collected_info(struct ndpi_workflow *workflow, struct ndpi_flo
              flow->ndpi_flow->protos.ssh.hassh_server);
   }
   /* TLS */
-  else if ((is_ndpi_proto(flow, NDPI_PROTOCOL_TLS)) || (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) || (flow->ndpi_flow->protos.stun_ssl.ssl.ja3_client[0] != '\0'))
+   if ((is_ndpi_proto(flow, NDPI_PROTOCOL_TLS)) || (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) || (flow->ndpi_flow->protos.stun_ssl.ssl.ja3_client[0] != '\0'))
   {
     flow->ssh_tls.ssl_version = flow->ndpi_flow->protos.stun_ssl.ssl.ssl_version;
     snprintf(flow->ssh_tls.client_info, sizeof(flow->ssh_tls.client_info), "%s",
@@ -956,7 +962,7 @@ static struct ndpi_proto packet_processing(struct ndpi_workflow *workflow,
     {
       u_int8_t skip = 0;
       // TCP AND (TLS or SSH) AND PACKETS LESS THAN TEN
-      if ((proto == IPPROTO_TCP) && (is_ndpi_proto(flow, NDPI_PROTOCOL_TLS) || /*(flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) || */ is_ndpi_proto(flow, NDPI_PROTOCOL_SSH) /*|| (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_SSH*/) && ((flow->src2dst_packets + flow->dst2src_packets) < 10 /* MIN_NUM_ENCRYPT_SKIP_PACKETS */))
+      if ((proto == IPPROTO_TCP) && (is_ndpi_proto(flow, NDPI_PROTOCOL_TLS)) /*|| (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) ||  is_ndpi_proto(flow, NDPI_PROTOCOL_SSH) /*|| (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_SSH*/ && ((flow->src2dst_packets + flow->dst2src_packets) < 10 /* MIN_NUM_ENCRYPT_SKIP_PACKETS */))
       {
         //Do not check for human readable strings
         skip = 1;
@@ -973,7 +979,7 @@ static struct ndpi_proto packet_processing(struct ndpi_workflow *workflow,
     }
     else
     {
-      if ((proto == IPPROTO_TCP) && (is_ndpi_proto(flow, NDPI_PROTOCOL_TLS) || /* (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) ||*/ is_ndpi_proto(flow, NDPI_PROTOCOL_SSH) /* ||  (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_SSH)*/))
+      if ((proto == IPPROTO_TCP) && (is_ndpi_proto(flow, NDPI_PROTOCOL_TLS)) /*||  (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_TLS) || is_ndpi_proto(flow, NDPI_PROTOCOL_SSH) /* ||  (flow->detected_protocol.master_protocol == NDPI_PROTOCOL_SSH)*/)
       {
         flow->has_human_readeable_strings = 0;
       }

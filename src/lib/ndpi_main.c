@@ -589,17 +589,17 @@ static void ndpi_init_protocol_defaults(struct ndpi_detection_module_struct *ndp
 							ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
 							ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
 
-	ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_HTTP,
-							1 /* can_have_a_subprotocol */, no_master,
-							no_master, "HTTP", NDPI_PROTOCOL_CATEGORY_WEB,
-							ndpi_build_default_ports(ports_a, 80, 0 /* ntop */, 0, 0, 0) /* TCP */,
-							ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+	// ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_HTTP,
+	// 						1 /* can_have_a_subprotocol */, no_master,
+	// 						no_master, "HTTP", NDPI_PROTOCOL_CATEGORY_WEB,
+	// 						ndpi_build_default_ports(ports_a, 80, 0 /* ntop */, 0, 0, 0) /* TCP */,
+	// 						ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
 
-	ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_FBZERO,
-							0 /* can_have_a_subprotocol */, no_master,
-							no_master, "FacebookZero", NDPI_PROTOCOL_CATEGORY_SOCIAL_NETWORK,
-							ndpi_build_default_ports(ports_a, 443, 0, 0, 0, 0) /* TCP */,
-							ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+	// ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_FBZERO,
+	// 						0 /* can_have_a_subprotocol */, no_master,
+	// 						no_master, "FacebookZero", NDPI_PROTOCOL_CATEGORY_SOCIAL_NETWORK,
+	// 						ndpi_build_default_ports(ports_a, 443, 0, 0, 0, 0) /* TCP */,
+	// 						ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
 
 	ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_WHATSAPP_CALL,
 							0 /* can_have_a_subprotocol */, no_master,
@@ -625,11 +625,11 @@ static void ndpi_init_protocol_defaults(struct ndpi_detection_module_struct *ndp
 							ndpi_build_default_ports(ports_a, 443, 0, 0, 0, 0) /* TCP */,
 							ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
 
-	ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_MESSENGER,
-							0 /* can_have_a_subprotocol */, no_master,
-							no_master, "Messenger", NDPI_PROTOCOL_CATEGORY_VOIP,
-							ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
-							ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
+	// ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_ACCEPTABLE, NDPI_PROTOCOL_MESSENGER,
+	// 						0 /* can_have_a_subprotocol */, no_master,
+	// 						no_master, "Messenger", NDPI_PROTOCOL_CATEGORY_VOIP,
+	// 						ndpi_build_default_ports(ports_a, 0, 0, 0, 0, 0) /* TCP */,
+	// 						ndpi_build_default_ports(ports_b, 0, 0, 0, 0, 0) /* UDP */);
 
 	ndpi_set_proto_defaults(ndpi_str, NDPI_PROTOCOL_SAFE, NDPI_PROTOCOL_GIT,
 							0 /* can_have_a_subprotocol */, no_master,
@@ -666,8 +666,8 @@ static void ndpi_init_ptree_ipv4(struct ndpi_detection_module_struct *ndpi_str, 
 		struct in_addr pin;
 		patricia_node_t *node;
 
-		if (skip_tor_hosts && (host_list[i].value == NDPI_PROTOCOL_TOR))
-			continue;
+		// if (skip_tor_hosts && (host_list[i].value == NDPI_PROTOCOL_TOR))
+		// 	continue;
 
 		pin.s_addr = htonl(host_list[i].network);
 		if ((node = add_to_ptree(ptree, AF_INET,
@@ -1509,14 +1509,14 @@ void *ndpi_realloc(void *ptr, size_t old_size,
 */
 u_int8_t is_udp_guessable_protocol(u_int16_t l7_guessed_proto)
 {
-	switch (l7_guessed_proto)
-	{
-	case NDPI_PROTOCOL_QUIC:
-	case NDPI_PROTOCOL_SNMP:
-	case NDPI_PROTOCOL_NETFLOW:
-		/* TODO: add more protocols (if any missing) */
-		return (1);
-	}
+	// switch (l7_guessed_proto)
+	// {
+	// case NDPI_PROTOCOL_QUIC:
+	// case NDPI_PROTOCOL_SNMP:
+	// case NDPI_PROTOCOL_NETFLOW:
+	// 	/* TODO: add more protocols (if any missing) */
+	// 	return (1);
+	// }
 
 	return (0);
 }
@@ -1588,40 +1588,40 @@ u_int16_t ndpi_guess_protocol_id(struct ndpi_detection_module_struct *ndpi_str,
 	{
 		/* No TCP/UDP */
 
-		switch (proto)
-		{
-		case NDPI_IPSEC_PROTOCOL_ESP:
-		case NDPI_IPSEC_PROTOCOL_AH:
-			return (NDPI_PROTOCOL_IP_IPSEC);
-			break;
-		case NDPI_GRE_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_GRE);
-			break;
-		case NDPI_ICMP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_ICMP);
-			break;
-		case NDPI_IGMP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_IGMP);
-			break;
-		case NDPI_EGP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_EGP);
-			break;
-		case NDPI_SCTP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_SCTP);
-			break;
-		case NDPI_OSPF_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_OSPF);
-			break;
-		case NDPI_IPIP_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_IP_IN_IP);
-			break;
-		case NDPI_ICMPV6_PROTOCOL_TYPE:
-			return (NDPI_PROTOCOL_IP_ICMPV6);
-			break;
-		case 112:
-			return (NDPI_PROTOCOL_IP_VRRP);
-			break;
-		}
+		// switch (proto)
+		// {
+		// case NDPI_IPSEC_PROTOCOL_ESP:
+		// case NDPI_IPSEC_PROTOCOL_AH:
+		// 	return (NDPI_PROTOCOL_IP_IPSEC);
+		// 	break;
+		// case NDPI_GRE_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_GRE);
+		// 	break;
+		// case NDPI_ICMP_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_ICMP);
+		// 	break;
+		// case NDPI_IGMP_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_IGMP);
+		// 	break;
+		// case NDPI_EGP_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_EGP);
+		// 	break;
+		// case NDPI_SCTP_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_SCTP);
+		// 	break;
+		// case NDPI_OSPF_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_OSPF);
+		// 	break;
+		// case NDPI_IPIP_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_IP_IN_IP);
+		// 	break;
+		// case NDPI_ICMPV6_PROTOCOL_TYPE:
+		// 	return (NDPI_PROTOCOL_IP_ICMPV6);
+		// 	break;
+		// case 112:
+		// 	return (NDPI_PROTOCOL_IP_VRRP);
+		// 	break;
+		// }
 	}
 
 	return (NDPI_PROTOCOL_UNKNOWN);
@@ -2030,33 +2030,33 @@ u_int8_t ndpi_extra_dissection_possible(struct ndpi_detection_module_struct *ndp
 			return (1);
 		break;
 
-	case NDPI_PROTOCOL_HTTP:
-		if ((flow->host_server_name[0] == '\0') || (flow->http.response_status_code == 0))
-			return (1);
-		break;
+	// case NDPI_PROTOCOL_HTTP:
+	// 	if ((flow->host_server_name[0] == '\0') || (flow->http.response_status_code == 0))
+	// 		return (1);
+	// 	break;
 
-	case NDPI_PROTOCOL_DNS:
-		if (flow->protos.dns.num_answers == 0)
-			return (1);
-		break;
+	// case NDPI_PROTOCOL_DNS:
+	// 	if (flow->protos.dns.num_answers == 0)
+	// 		return (1);
+	// 	break;
 
-	case NDPI_PROTOCOL_FTP_CONTROL:
-	case NDPI_PROTOCOL_MAIL_POP:
-	case NDPI_PROTOCOL_MAIL_IMAP:
-	case NDPI_PROTOCOL_MAIL_SMTP:
-		if (flow->protos.ftp_imap_pop_smtp.password[0] == '\0')
-			return (1);
-		break;
+	// case NDPI_PROTOCOL_FTP_CONTROL:
+	// case NDPI_PROTOCOL_MAIL_POP:
+	// case NDPI_PROTOCOL_MAIL_IMAP:
+	// case NDPI_PROTOCOL_MAIL_SMTP:
+	// 	if (flow->protos.ftp_imap_pop_smtp.password[0] == '\0')
+	// 		return (1);
+	// 	break;
 
-	case NDPI_PROTOCOL_SSH:
-		if ((flow->protos.ssh.hassh_client[0] == '\0') || (flow->protos.ssh.hassh_server[0] == '\0'))
-			return (1);
-		break;
+	// case NDPI_PROTOCOL_SSH:
+	// 	if ((flow->protos.ssh.hassh_client[0] == '\0') || (flow->protos.ssh.hassh_server[0] == '\0'))
+	// 		return (1);
+	// 	break;
 
-	case NDPI_PROTOCOL_TELNET:
-		if (!flow->protos.telnet.password_detected)
-			return (1);
-		break;
+	// case NDPI_PROTOCOL_TELNET:
+	// 	if (!flow->protos.telnet.password_detected)
+	// 		return (1);
+	// 	break;
 	}
 
 	return (0);
@@ -2365,9 +2365,9 @@ ndpi_protocol ndpi_detection_process_packet(struct ndpi_detection_module_struct 
 
 				switch (port)
 				{
-				case 80:
-					ret.master_protocol = NDPI_PROTOCOL_HTTP;
-					break;
+				// case 80:
+				// 	ret.master_protocol = NDPI_PROTOCOL_HTTP;
+				// 	break;
 				case 443:
 					ret.master_protocol = NDPI_PROTOCOL_TLS; /* QUIC could also match */
 					break;
@@ -2878,11 +2878,11 @@ ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_st
 	if (flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN)
 	{
 		u_int16_t guessed_protocol_id, guessed_host_protocol_id;
-		if (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN)
-			goto check_stun_export;
-		else if ((flow->guessed_protocol_id == NDPI_PROTOCOL_HANGOUT_DUO) || (flow->guessed_protocol_id == NDPI_PROTOCOL_MESSENGER) || (flow->guessed_protocol_id == NDPI_PROTOCOL_WHATSAPP_CALL))
-			ndpi_set_detected_protocol(ndpi_str, flow, flow->guessed_protocol_id, NDPI_PROTOCOL_UNKNOWN);
-		else if ((flow->l4.tcp.tls_seen_client_cert == 1) && (flow->protos.stun_ssl.ssl.client_certificate[0] != '\0'))
+		// if (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN)
+		// 	goto check_stun_export;
+		// else if ((flow->guessed_protocol_id == NDPI_PROTOCOL_HANGOUT_DUO) || (flow->guessed_protocol_id == NDPI_PROTOCOL_MESSENGER) || (flow->guessed_protocol_id == NDPI_PROTOCOL_WHATSAPP_CALL))
+		// 	ndpi_set_detected_protocol(ndpi_str, flow, flow->guessed_protocol_id, NDPI_PROTOCOL_UNKNOWN);
+		  if ((flow->l4.tcp.tls_seen_client_cert == 1) && (flow->protos.stun_ssl.ssl.client_certificate[0] != '\0'))
 		{
 			ndpi_set_detected_protocol(ndpi_str, flow, NDPI_PROTOCOL_TLS, NDPI_PROTOCOL_UNKNOWN);
 		}
@@ -2904,8 +2904,8 @@ ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_st
 
 			if ((guessed_protocol_id != NDPI_PROTOCOL_UNKNOWN) || (guessed_host_protocol_id != NDPI_PROTOCOL_UNKNOWN))
 			{
-				if ((guessed_protocol_id == 0) && (flow->protos.stun_ssl.stun.num_binding_requests > 0) && (flow->protos.stun_ssl.stun.num_processed_pkts > 0))
-					guessed_protocol_id = NDPI_PROTOCOL_STUN;
+				// if ((guessed_protocol_id == 0) && (flow->protos.stun_ssl.stun.num_binding_requests > 0) && (flow->protos.stun_ssl.stun.num_processed_pkts > 0))
+				// 	guessed_protocol_id = NDPI_PROTOCOL_STUN;
 
 				if (flow->host_server_name[0] != '\0')
 				{
@@ -2934,34 +2934,34 @@ ndpi_protocol ndpi_detection_giveup(struct ndpi_detection_module_struct *ndpi_st
 			flow->detected_protocol_stack[1] = flow->guessed_host_protocol_id;
 	}
 
-	if ((flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN) && (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN))
+	if ((flow->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN) /*&& (flow->guessed_protocol_id == NDPI_PROTOCOL_STUN)*/)
 	{
-	check_stun_export:
-		if (flow->protos.stun_ssl.stun.num_processed_pkts || flow->protos.stun_ssl.stun.num_udp_pkts)
-		{
-			// if(/* (flow->protos.stun_ssl.stun.num_processed_pkts >= NDPI_MIN_NUM_STUN_DETECTION) */
-			ndpi_set_detected_protocol(ndpi_str, flow,
-									   flow->guessed_host_protocol_id,
-									   NDPI_PROTOCOL_STUN);
-		}
+	// check_stun_export:
+		// if (flow->protos.stun_ssl.NDPI_PROTOCOL_HTTPstun.num_processed_pkts || flow->protos.stun_ssl.stun.num_udp_pkts)
+		// {
+		// 	// if(/* (flow->protos.stun_ssl.stun.num_processed_pkts >= NDPI_MIN_NUM_STUN_DETECTION) */
+		// 	ndpi_set_detected_protocol(ndpi_str, flow,
+		// 							   flow->guessed_host_protocol_id,
+		// 							   NDPI_PROTOCOL_STUN);
+		// }
 	}
 
 	ret.master_protocol = flow->detected_protocol_stack[1], ret.app_protocol = flow->detected_protocol_stack[0];
 
-	if (ret.master_protocol == NDPI_PROTOCOL_STUN)
-	{
-		if (ret.app_protocol == NDPI_PROTOCOL_FACEBOOK)
-			ret.app_protocol = NDPI_PROTOCOL_MESSENGER;
-		else if (ret.app_protocol == NDPI_PROTOCOL_GOOGLE)
-		{
-			/*
-			As Google has recently introduced Duo,
-			we need to distinguish between it and hangout
-			thing that should be handled by the STUN dissector
-  	  	  */
-			ret.app_protocol = NDPI_PROTOCOL_HANGOUT_DUO;
-		}
-	}
+	// if (ret.master_protocol == NDPI_PROTOCOL_STUN)
+	// {
+	// 	if (ret.app_protocol == NDPI_PROTOCOL_FACEBOOK)
+	// 	// 	ret.app_protocol = NDPI_PROTOCOL_MESSENGER;
+	// 	// else if (ret.app_protocol == NDPI_PROTOCOL_GOOGLE)
+	// 	// {
+	// 	// 	/*
+	// 	// 	As Google has recently introduced Duo,
+	// 	// 	we need to distinguish between it and hangout
+	// 	// 	thing that should be handled by the STUN dissector
+  	//   	//   */
+	// 	// 	ret.app_protocol = NDPI_PROTOCOL_HANGOUT_DUO;
+	// 	// }
+	// }
 
 	if (ret.app_protocol != NDPI_PROTOCOL_UNKNOWN)
 		ndpi_fill_protocol_category(ndpi_str, flow, &ret);
@@ -3294,7 +3294,7 @@ void ndpi_set_protocol_detection_bitmask2(struct ndpi_detection_module_struct *n
 	ndpi_str->callback_buffer_size = 0;
 
 	/* HTTP */
-	init_http_dissector(ndpi_str, &a, detection_bitmask);
+	// init_http_dissector(ndpi_str, &a, detection_bitmask);
 	/* TLS */
 	init_tls_dissector(ndpi_str, &a, detection_bitmask);
 
@@ -3305,7 +3305,7 @@ void ndpi_set_protocol_detection_bitmask2(struct ndpi_detection_module_struct *n
 	init_git_dissector(ndpi_str, &a, detection_bitmask);
 
 	/* DNS */
-	init_dns_dissector(ndpi_str, &a, detection_bitmask);
+	// init_dns_dissector(ndpi_str, &a, detection_bitmask);
 
 #ifdef CUSTOM_NDPI_PROTOCOLS
 #include "../../../nDPI-custom/custom_ndpi_main_init.c"
@@ -3452,8 +3452,8 @@ u_int8_t ndpi_is_tor_flow(struct ndpi_detection_module_struct *ndpi_str,
   {
     if (packet->iph)
     {
-      if (flow->guessed_host_protocol_id == NDPI_PROTOCOL_TOR)
-        return (1);
+    //   if (flow->guessed_host_protocol_id == NDPI_PROTOCOL_TOR)
+    //     return (1);
     }
   }
 
@@ -4159,11 +4159,11 @@ int ndpi_handle_rule(struct ndpi_detection_module_struct *ndpi_str,
 			else
 				removeDefaultPort(&range, def, is_tcp ? &ndpi_str->tcpRoot : &ndpi_str->udpRoot);
 		}
-		else if (is_ip)
-		{
-			/* NDPI_PROTOCOL_TOR */
-			ndpi_add_host_ip_subprotocol(ndpi_str, value, subprotocol_id);
-		}
+		// else if (is_ip)
+		// {
+		// 	/* NDPI_PROTOCOL_TOR */
+		// 	ndpi_add_host_ip_subprotocol(ndpi_str, value, subprotocol_id);
+		// }
 		else
 		{
 			if (do_add)

@@ -437,7 +437,7 @@ Copyright (C) 2012 Free Software Foundation, Inc.
 This config.status script is free software; the Free Software Foundation
 gives unlimited permission to copy, distribute and modify it."
 
-ac_pwd='/home/omarnagah/new project/sDPI'
+ac_pwd='/home/omarcc/project/sDPI'
 srcdir='.'
 INSTALL='/usr/bin/install -c'
 MKDIR_P='/bin/mkdir -p'
@@ -679,7 +679,7 @@ finish_cmds='PATH="\$PATH:/sbin" ldconfig -n $libdir'
 finish_eval=''
 hardcode_into_libs='yes'
 sys_lib_search_path_spec='/usr/lib/gcc/x86_64-linux-gnu/7 /usr/lib/x86_64-linux-gnu /usr/lib /lib/x86_64-linux-gnu /lib '
-configure_time_dlsearch_path='/lib /usr/lib /usr/lib/x86_64-linux-gnu/libfakeroot /usr/local/lib /usr/local/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu /lib32 /usr/lib32 '
+configure_time_dlsearch_path='/lib /usr/lib /usr/lib/x86_64-linux-gnu/libfakeroot /usr/local/lib /usr/local/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu '
 configure_time_lt_sys_library_path=''
 hardcode_action='immediate'
 enable_dlopen='unknown'
@@ -892,7 +892,7 @@ S["NDPI_VERSION_SHORT"]="3.1.0"
 S["NDPI_PATCH"]="0"
 S["NDPI_MINOR"]="1"
 S["NDPI_MAJOR"]="3"
-S["GIT_RELEASE"]="3.1.0-104-882d0c7"
+S["GIT_RELEASE"]="3.1.0-111-5c413a9"
 S["HAS_FUZZLDFLAGS_FALSE"]=""
 S["HAS_FUZZLDFLAGS_TRUE"]="#"
 S["LIB_FUZZING_ENGINE"]=""
@@ -974,12 +974,12 @@ S["mkdir_p"]="$(MKDIR_P)"
 S["MKDIR_P"]="/bin/mkdir -p"
 S["INSTALL_STRIP_PROGRAM"]="$(install_sh) -c -s"
 S["STRIP"]="strip"
-S["install_sh"]="${SHELL} '/home/omarnagah/new project/sDPI/install-sh'"
-S["MAKEINFO"]="${SHELL} \"/home/omarnagah/new project/sDPI/missing\" makeinfo"
-S["AUTOHEADER"]="${SHELL} \"/home/omarnagah/new project/sDPI/missing\" autoheader"
-S["AUTOMAKE"]="${SHELL} \"/home/omarnagah/new project/sDPI/missing\" automake-1.15"
-S["AUTOCONF"]="${SHELL} \"/home/omarnagah/new project/sDPI/missing\" autoconf"
-S["ACLOCAL"]="${SHELL} \"/home/omarnagah/new project/sDPI/missing\" aclocal-1.15"
+S["install_sh"]="${SHELL} /home/omarcc/project/sDPI/install-sh"
+S["MAKEINFO"]="${SHELL} /home/omarcc/project/sDPI/missing makeinfo"
+S["AUTOHEADER"]="${SHELL} /home/omarcc/project/sDPI/missing autoheader"
+S["AUTOMAKE"]="${SHELL} /home/omarcc/project/sDPI/missing automake-1.15"
+S["AUTOCONF"]="${SHELL} /home/omarcc/project/sDPI/missing autoconf"
+S["ACLOCAL"]="${SHELL} /home/omarcc/project/sDPI/missing aclocal-1.15"
 S["VERSION"]="3.1.0"
 S["PACKAGE"]="libndpi"
 S["CYGPATH_W"]="echo"
@@ -1090,8 +1090,8 @@ D["LT_OBJDIR"]=" \".libs/\""
 D["NDPI_MAJOR_RELEASE"]=" \"3\""
 D["NDPI_MINOR_RELEASE"]=" \"1\""
 D["NDPI_PATCH_LEVEL"]=" \"0\""
-D["NDPI_GIT_RELEASE"]=" \"3.1.0-104-882d0c7\""
-D["NDPI_GIT_DATE"]=" \"Mon Feb 3 13:23:21 2020 +0200\""
+D["NDPI_GIT_RELEASE"]=" \"3.1.0-111-5c413a9\""
+D["NDPI_GIT_DATE"]=" \"Tue Feb 4 10:41:15 2020 +0200\""
 D["HAVE_NETINET_IN_H"]=" 1"
 D["HAVE_STDINT_H"]=" 1"
 D["HAVE_STDLIB_H"]=" 1"

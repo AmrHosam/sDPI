@@ -63,37 +63,36 @@ extern int sslTryAndRetrieveServerCertificate(struct ndpi_detection_module_struc
 
 /* **************************************** */
 
-static u_int32_t ndpi_tls_refine_master_protocol(struct ndpi_detection_module_struct *ndpi_struct,
-						 struct ndpi_flow_struct *flow, u_int32_t protocol) {
-  struct ndpi_packet_struct *packet = &flow->packet;
+// static u_int32_t ndpi_tls_refine_master_protocol(struct ndpi_detection_module_struct *ndpi_struct,
+// 						 struct ndpi_flow_struct *flow, u_int32_t protocol) {
+//   struct ndpi_packet_struct *packet = &flow->packet;
 
   // protocol = NDPI_PROTOCOL_TLS;
 
-  if(packet->tcp != NULL) {
-    switch(protocol) {
-    case NDPI_PROTOCOL_TLS:
-      {
+    // if(packet->tcp != NULL) {
+    // switch(protocol) {
+    // case NDPI_PROTOCOL_TLS:
+    //   {
 	/*
 	  In case of SSL there are probably sub-protocols
 	  such as IMAPS that can be otherwise detected
 	*/
-	u_int16_t sport = ntohs(packet->tcp->source);
-	u_int16_t dport = ntohs(packet->tcp->dest);
+	// u_int16_t sport = ntohs(packet->tcp->source);
+	// u_int16_t dport = ntohs(packet->tcp->dest);
 
-	if((sport == 465) || (dport == 465) || (sport == 587) || (dport == 587))
-	  protocol = NDPI_PROTOCOL_MAIL_SMTPS;
-	else if((sport == 993) || (dport == 993)
-		|| (flow->l4.tcp.mail_imap_starttls)
-		) protocol = NDPI_PROTOCOL_MAIL_IMAPS;
-	else if((sport == 995) || (dport == 995)) protocol = NDPI_PROTOCOL_MAIL_POPS;
-      }
-      break;
-    }
-  }
+// 	if((sport == 465) || (dport == 465) || (sport == 587) || (dport == 587))
+// 	 // protocol = NDPI_PROTOCOL_MAIL_SMTPS;
+// 	else if((sport == 993) || (dport == 993)
+// 		|| (flow->l4.tcp.mail_imap_starttls)
+// 		) protocol = NDPI_PROTOCOL_MAIL_IMAPS;
+// 	else if((sport == 995) || (dport == 995)) protocol = NDPI_PROTOCOL_MAIL_POPS;
+//       }
+//       break;
+//    // }
+//    /}
 
-  return protocol;
-}
-
+//   return protocol;
+// }
 /* **************************************** */
 
 static void sslInitExtraPacketProcessing(struct ndpi_flow_struct *flow) {
@@ -110,8 +109,8 @@ static void ndpi_int_tls_add_connection(struct ndpi_detection_module_struct *ndp
 					struct ndpi_flow_struct *flow, u_int32_t protocol) {
   if(protocol != NDPI_PROTOCOL_TLS)
     ;
-  else
-    protocol = ndpi_tls_refine_master_protocol(ndpi_struct, flow, protocol);
+//   else
+//     protocol = ndpi_tls_refine_master_protocol(ndpi_struct, flow, protocol);
 
   ndpi_set_detected_protocol(ndpi_struct, flow, protocol, NDPI_PROTOCOL_TLS);
   sslInitExtraPacketProcessing(flow);
@@ -1146,14 +1145,14 @@ int tlsDetectProtocolFromCertificate(struct ndpi_detection_module_struct *ndpi_s
 	    sslInitExtraPacketProcessing(flow);
 	  }
 
-	  ndpi_set_detected_protocol(ndpi_struct, flow, subproto,
-				     ndpi_tls_refine_master_protocol(ndpi_struct, flow, NDPI_PROTOCOL_TLS));
+	//   ndpi_set_detected_protocol(ndpi_struct, flow, subproto,
+	// 			     ndpi_tls_refine_master_protocol(ndpi_struct, flow, NDPI_PROTOCOL_TLS));
 	  return(rc);
 	}
 
-	if(ndpi_is_tls_tor(ndpi_struct, flow, certificate) != 0)
-	  return(rc);
-      }
+	// if(ndpi_is_tls_tor(ndpi_struct, flow, certificate) != 0)
+	//   return(rc);
+    //   }
 
 #ifdef DEBUG_TLS
       printf("[TLS] %s() [tls_certificate_num_checks: %u][tls_srv_cert_fingerprint_processed: %u][tls_certificate_detected: %u][%u/%u]",
@@ -1165,7 +1164,7 @@ int tlsDetectProtocolFromCertificate(struct ndpi_detection_module_struct *ndpi_s
 #endif
 
 
-      if(((packet->tls_certificate_num_checks >= 1)
+      if((packet->tls_certificate_num_checks >= 1)
 #if 0
 	  && (flow->l4.tcp.seen_syn /* User || to be tolerant */
 	      || flow->l4.tcp.seen_syn_ack
@@ -1182,10 +1181,11 @@ int tlsDetectProtocolFromCertificate(struct ndpi_detection_module_struct *ndpi_s
 	     && (flow->protos.stun_ssl.ssl.server_certificate[0] != '\0'))
 	 */
 	 /* || ((flow->l4.tcp.tls_seen_client_cert == 1) && (flow->protos.stun_ssl.ssl.client_certificate[0] != '\0')) */
-	 ) {
+	  {
 	ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_TLS);
       }
-    }
+	}
+   }
   }
   
   return(0);
@@ -1204,24 +1204,24 @@ static void tls_mark_and_payload_search(struct ndpi_detection_module_struct
   printf("[TLS] %s()\n", __FUNCTION__);
 #endif
   
-  if(NDPI_COMPARE_PROTOCOL_TO_BITMASK(ndpi_struct->detection_bitmask, NDPI_PROTOCOL_UNENCRYPTED_JABBER) != 0)
-    goto check_for_tls_payload;
+//   if(NDPI_COMPARE_PROTOCOL_TO_BITMASK(ndpi_struct->detection_bitmask, NDPI_PROTOCOL_UNENCRYPTED_JABBER) != 0)
+//     goto check_for_tls_payload;
 
-  if(NDPI_COMPARE_PROTOCOL_TO_BITMASK(ndpi_struct->detection_bitmask, NDPI_PROTOCOL_OSCAR) != 0)
-    goto check_for_tls_payload;
-  else
-    goto no_check_for_tls_payload;
+//   if(NDPI_COMPARE_PROTOCOL_TO_BITMASK(ndpi_struct->detection_bitmask, NDPI_PROTOCOL_OSCAR) != 0)
+//     goto check_for_tls_payload;
+//   else
+//     goto no_check_for_tls_payload;
 
- check_for_tls_payload:
+//  check_for_tls_payload:
   end = packet->payload_packet_len - 20;
   for (a = 5; a < end; a++) {
 
     if(packet->payload[a] == 't') {
       if(memcmp(&packet->payload[a], "talk.google.com", 15) == 0) {
-	if(NDPI_COMPARE_PROTOCOL_TO_BITMASK
-	   (ndpi_struct->detection_bitmask, NDPI_PROTOCOL_UNENCRYPTED_JABBER) != 0) {
-	  NDPI_LOG_INFO(ndpi_struct, "found ssl jabber unencrypted\n");
-	  ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_UNENCRYPTED_JABBER);
+	// if(NDPI_COMPARE_PROTOCOL_TO_BITMASK
+	//    (ndpi_struct->detection_bitmask, NDPI_PROTOCOL_UNENCRYPTED_JABBER) != 0) {
+	//   NDPI_LOG_INFO(ndpi_struct, "found ssl jabber unencrypted\n");
+	//   ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_UNENCRYPTED_JABBER);
 	  return;
 	}
       }
@@ -1248,7 +1248,7 @@ static void tls_mark_and_payload_search(struct ndpi_detection_module_struct
 	  flow->dst->oscar_last_safe_access_time = packet->tick_timestamp;
 	}
 
-	ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_OSCAR);
+	// ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_OSCAR);
 	return;
       }
     }
@@ -1258,13 +1258,14 @@ static void tls_mark_and_payload_search(struct ndpi_detection_module_struct
 	 (memcmp(&packet->payload[a], "my.screenname.aol.com", 21) == 0
 	  || memcmp(&packet->payload[a], "sns-static.aolcdn.com", 21) == 0)) {
 	NDPI_LOG_DBG(ndpi_struct, "found OSCAR SERVER SSL DETECTED\n");
-	ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_OSCAR);
+	// ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_OSCAR);
 	return;
       }
     }
-  }
+  
 
- no_check_for_tls_payload:
+//  no_check_for_tls_payload :
+
   if(packet->detected_protocol_stack[0] == NDPI_PROTOCOL_UNKNOWN) {
     NDPI_LOG_DBG(ndpi_struct, "found ssl connection\n");
     tlsDetectProtocolFromCertificate(ndpi_struct, flow, skip_cert_processing);
@@ -1425,12 +1426,12 @@ void ndpi_search_tls_tcp_udp(struct ndpi_detection_module_struct *ndpi_struct,
 	  printf("[LRU] Adding Signal cached keys\n");
 #endif
 	  
-	  ndpi_lru_add_to_cache(ndpi_struct->stun_cache, get_stun_lru_key(flow, 0), NDPI_PROTOCOL_SIGNAL);
-	  ndpi_lru_add_to_cache(ndpi_struct->stun_cache, get_stun_lru_key(flow, 1), NDPI_PROTOCOL_SIGNAL);
+	//   ndpi_lru_add_to_cache(ndpi_struct->stun_cache, get_stun_lru_key(flow, 0), NDPI_PROTOCOL_SIGNAL);
+	//   ndpi_lru_add_to_cache(ndpi_struct->stun_cache, get_stun_lru_key(flow, 1), NDPI_PROTOCOL_SIGNAL);
 	}
 		
 	/* In Signal protocol STUN turns into DTLS... */
-	ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_SIGNAL);
+	// ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_SIGNAL);
       } else if(flow->protos.stun_ssl.ssl.ja3_server[0] != '\0') {
 	/* Wait the server certificate the bless this flow as TLS */
 	ndpi_int_tls_add_connection(ndpi_struct, flow, NDPI_PROTOCOL_TLS);
