@@ -546,26 +546,28 @@ static void init_string_based_protocols(struct ndpi_detection_module_struct *ndp
 }
 /* ******************************************************************** */
 
-static void ndpi_validate_protocol_initialization(struct ndpi_detection_module_struct *ndpi_str)
-{
-	int i;
+// static void ndpi_validate_protocol_initialization(struct ndpi_detection_module_struct *ndpi_str)
+// {
+// 	int i;
 
-	for (i = 0; i < (int)ndpi_str->ndpi_num_supported_protocols; i++)
-	{
-		if (ndpi_str->proto_defaults[i].protoName == NULL)
-		{
-			NDPI_LOG_ERR(ndpi_str, "[NDPI] INTERNAL ERROR missing protoName initialization for [protoId=%d]: recovering\n", i);
-		}
-		else
-		{
-			if ((i != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[i].protoCategory == NDPI_PROTOCOL_CATEGORY_UNSPECIFIED))
-			{
-				NDPI_LOG_ERR(ndpi_str, "[NDPI] INTERNAL ERROR missing category [protoId=%d/%s] initialization: recovering\n",
-							 i, ndpi_str->proto_defaults[i].protoName ? ndpi_str->proto_defaults[i].protoName : "???");
-			}
-		}
-	}
-}
+// 	for (i = 0; i < (int)ndpi_str->ndpi_num_supported_protocols; i++)
+// 	{
+// 		if (ndpi_str->proto_defaults[i].protoName == NULL)
+// 		{
+// 			NDPI_LOG_ERR(ndpi_str, "We dont need [protoId=%d]\n", i);
+// 		}
+// 		else
+// 		{
+// 			printf("da tamam --> %d \n",i);
+// 			if ((i != NDPI_PROTOCOL_UNKNOWN) && (ndpi_str->proto_defaults[i].protoCategory == NDPI_PROTOCOL_CATEGORY_UNSPECIFIED))
+// 			{
+// 				NDPI_LOG_ERR(ndpi_str, "[NDPI] INTERNAL ERROR missing category [protoId=%d/%s] initialization: recovering\n",
+// 							 i, ndpi_str->proto_defaults[i].protoName ? ndpi_str->proto_defaults[i].protoName : "???");
+
+// 			}
+// 		}
+// 	}
+// }
 
 /* ******************************************************************** */
 
@@ -643,7 +645,7 @@ static void ndpi_init_protocol_defaults(struct ndpi_detection_module_struct *ndp
 	/* calling function for host and content matched protocols */
 	init_string_based_protocols(ndpi_str);
 
-	ndpi_validate_protocol_initialization(ndpi_str);
+	//ndpi_validate_protocol_initialization(ndpi_str);
 }
 static patricia_node_t *add_to_ptree(patricia_tree_t *tree, int family, void *addr, int bits)
 {
