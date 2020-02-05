@@ -1304,7 +1304,7 @@ int tlsDetectProtocolFromCertificate(struct ndpi_detection_module_struct *ndpi_s
 
 		return (0);
 	}
-
+}
 	/* **************************************** */
 
 	static void tls_mark_and_payload_search(struct ndpi_detection_module_struct * ndpi_struct,
