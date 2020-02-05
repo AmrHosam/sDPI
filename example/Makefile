@@ -1,8 +1,8 @@
 CC=gcc
 CXX=g++
-CFLAGS=-g -I../src/include -g -O2
+CFLAGS=-g -I../src/include -g -O2 -I/usr/include/json-c
 LIBNDPI=../src/lib/libndpi.a
-LDFLAGS=$(LIBNDPI) -lpcap -lpthread -lm 
+LDFLAGS=$(LIBNDPI) -lpcap -lpthread -lm  -ljson-c
 OBJS=ndpiReader.o reader_util.o
 PREFIX?=/usr/local
 
