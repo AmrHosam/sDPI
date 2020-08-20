@@ -1,5 +1,5 @@
 # sDPI
-sDPI is a smaller version of [nDPI](https://github.com/ntop/nDPI) which detect three protocols (Facebook- youtube - github).
+sDPI is a smaller version of [nDPI](https://github.com/ntop/nDPI) which detect three protocols (Facebook- Whatsapp - github).
 ## Team members:
 1. Amr Hossam Ali 
 2. Hamed Abdelrahim Fathallah 
